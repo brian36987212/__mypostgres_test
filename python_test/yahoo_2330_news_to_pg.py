@@ -250,7 +250,6 @@ def extract_detail(article_url: str):
 
     return headline, publisher, reporter, published_text, content
 
-
 def main():
     list_html = get_html(LIST_URL)
     news = extract_news(list_html)
@@ -260,25 +259,39 @@ def main():
         return
 
     rows = []
-    print(f"🔍 找到 {len(news)} 則新聞，開始解析內容與計算情緒...")
+    # 新增：用來記錄這一批次已經處理過的「最終標題」
+    seen_final_titles = set()
+
+    print(f"🔍 找到 {len(news)} 則連結，開始解析內容與計算情緒...")
     
+    # 用來計數實際處理的數量
+    processed_count = 0
+
     for i, (list_title, url) in enumerate(news):
         try:
             headline, publisher, reporter, published_text, content = extract_detail(url)
             
-            # --- 新增：計算情緒分數 ---
-            # 為了省錢或省時間，你可以加上 time.sleep(1) 避免太快
+            # --- 關鍵修正：這裡做第二次去重 ---
+            final_title = headline or list_title
+            
+            if final_title in seen_final_titles:
+                print(f"  [跳過] 重複的標題：{final_title}")
+                continue
+            
+            seen_final_titles.add(final_title)
+            # --------------------------------
+
+            # 計算情緒分數
             sentiment_score = get_nvidia_sentiment_score(content)
-            print(f"  [{i+1}/{len(news)}] 分數:{sentiment_score} | 標題: {headline or list_title}")
+            
+            processed_count += 1
+            print(f"  [{processed_count}] 分數:{sentiment_score} | 標題: {final_title}")
+
+            rows.append((final_title, publisher, reporter, published_text, content, sentiment_score, url))
 
         except Exception as e:
             print(f"⚠️ 內頁解析失敗：{url}\n   {e}")
             continue
-
-        final_title = headline or list_title
-        # 存入資料庫的順序要跟 SQL 對應：
-        # title, publisher, reporter, published_text, content, sentiment_score, url
-        rows.append((final_title, publisher, reporter, published_text, content, sentiment_score, url))
 
     if not rows:
         print("❌ 沒有可寫入的新聞")
@@ -292,7 +305,6 @@ def main():
         conn.commit()
 
     print(f"✅ 成功寫入 {len(rows)} 則新聞 (含情緒分數)")
-
 
 if __name__ == "__main__":
     main()
