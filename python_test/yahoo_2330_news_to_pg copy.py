@@ -20,6 +20,7 @@ HEADERS = {
 
 WEEKDAY_ZH = ["週一", "週二", "週三", "週四", "週五", "週六", "週日"]
 
+# 1. 修改 SQL：新增 content 欄位
 CREATE_TABLE_SQL = """
 CREATE TABLE IF NOT EXISTS public.yahoo_2330_news (
   id BIGSERIAL PRIMARY KEY,
@@ -27,20 +28,23 @@ CREATE TABLE IF NOT EXISTS public.yahoo_2330_news (
   publisher TEXT,
   reporter TEXT,
   published_text TEXT,
+  content TEXT,  -- 新增這一行
   url TEXT NOT NULL UNIQUE,
   fetched_at TIMESTAMPTZ DEFAULT now()
 );
 """
 
+# 2. 修改 SQL：插入時也寫入 content
 UPSERT_SQL = """
 INSERT INTO public.yahoo_2330_news
-(title, publisher, reporter, published_text, url)
-VALUES (%s, %s, %s, %s, %s)
+(title, publisher, reporter, published_text, content, url)
+VALUES (%s, %s, %s, %s, %s, %s)
 ON CONFLICT (url) DO UPDATE SET
   title = EXCLUDED.title,
   publisher = EXCLUDED.publisher,
   reporter = EXCLUDED.reporter,
-  published_text = EXCLUDED.published_text;
+  published_text = EXCLUDED.published_text,
+  content = EXCLUDED.content;
 """
 
 
@@ -90,6 +94,9 @@ def extract_news(list_html: str):
         list_title = a.get_text(strip=True)
         if not list_title:
             continue
+        # ❌ 排除導覽用的「新聞」這一列
+        if list_title == "新聞":
+            continue
 
         url = urljoin(BASE_URL, href)
         if url in seen:
@@ -103,11 +110,7 @@ def extract_news(list_html: str):
 
 def extract_reporter_from_meta_description(soup: BeautifulSoup):
     """
-    以你提供的「目前樣子」為主：從 <meta name="description" content="..."> 抓記者。
-    依據你貼的例子，支援兩種常見格式：
-      1) 【時報記者莊丙安台北報導】 -> 抓「莊丙安」
-      2) 【財訊快報／戴辰Z】 -> 抓「戴辰Z」
-    抓不到回 None（不臆測）
+    從 <meta name="description"> 抓記者。
     """
     meta = soup.find("meta", attrs={"name": "description"})
     if not meta or not meta.get("content"):
@@ -116,17 +119,13 @@ def extract_reporter_from_meta_description(soup: BeautifulSoup):
     content = meta["content"].strip()
 
     # 格式 1：包含「記者」
-    # 例：【時報記者莊丙安台北報導】...  -> 取 記者 後面的名字，遇到 地名/報導/】 等就停
     m = re.search(r"記者\s*([^\s／/】]+)", content)
     if m:
         name = m.group(1).strip()
-        # 有些會把「台北報導」黏在一起（你例子：莊丙安台北報導），做保守裁切
-        # 只在出現「台北/新北/高雄/台中/桃園/報導」等字樣時截掉後面
         name = re.split(r"(台北|新北|台中|高雄|桃園|報導)", name)[0].strip()
         return name or None
 
     # 格式 2：用「／」分隔
-    # 例：【財訊快報／戴辰Z】... -> 取 ／ 後面到 】 前
     m = re.search(r"／\s*([^】]+)\s*】", content)
     if m:
         name = m.group(1).strip()
@@ -134,14 +133,37 @@ def extract_reporter_from_meta_description(soup: BeautifulSoup):
 
     return None
 
+def strip_publisher_from_reporter(reporter: str | None, publisher: str | None) -> str | None:
+    """
+    記者抓到後，把裡頭的出版社名稱去掉，只留名字。
+    """
+    if not reporter:
+        return None
+
+    r = reporter.strip()
+    if not r:
+        return None
+
+    if publisher:
+        p = publisher.strip()
+        if p:
+            r = r.replace(p, "")
+
+    r = r.replace("記者", "")
+    r = r.replace("特派", "")
+    r = r.replace("特派記者", "")
+    r = r.replace("派駐", "")
+    r = r.replace("派駐記者", "")
+
+    r = re.sub(r"[／/｜|：:]", " ", r)
+    r = re.sub(r"\s+", " ", r).strip()
+
+    return r or None
+
 
 def extract_detail(article_url: str):
     """
-    抓內頁：
-      - title：JSON-LD headline（抓不到退回 None）
-      - publisher：JSON-LD provider.name（抓不到 None）
-      - reporter：以 meta description 為主，抓不到再 fallback JSON-LD author.name
-      - published_text：datePublished -> Yahoo 顯示格式（抓不到 None）
+    抓內頁：包含 title, publisher, reporter, published_text, content
     """
     html = get_html(article_url)
     soup = BeautifulSoup(html, "lxml")
@@ -150,8 +172,9 @@ def extract_detail(article_url: str):
     publisher = None            # provider.name
     reporter_jsonld = None      # author.name
     published_text = None
+    content = None              # 內文
 
-    # 先抓 JSON-LD（title / publisher / time / author fallback）
+    # --- 1. JSON-LD 解析 ---
     for tag in soup.find_all("script", attrs={"type": "application/ld+json"}):
         raw = tag.string
         if not raw:
@@ -187,11 +210,25 @@ def extract_detail(article_url: str):
             if iso_time:
                 published_text = format_time_yahoo_tw(iso_time)
 
-    # 以 meta description 抓 reporter（你指定「以目前樣子為主」）
+    # --- 2. 記者與出版社清理 ---
     reporter_meta = extract_reporter_from_meta_description(soup)
     reporter = reporter_meta or reporter_jsonld
+    reporter = strip_publisher_from_reporter(reporter, publisher)
 
-    return headline, publisher, reporter, published_text
+    # --- 3. 新增：抓取內文 ---
+    # Yahoo 新聞內文通常包在 class="caas-body" 裡面
+    content_div = soup.find("div", class_="caas-body")
+    
+    if content_div:
+        # 使用 get_text 並用換行符號分隔段落
+        content = content_div.get_text(separator="\n", strip=True)
+    else:
+        # 如果找不到 caas-body，嘗試抓所有 p 標籤 (備用方案)
+        ps = soup.find_all("p")
+        if ps:
+            content = "\n".join([p.get_text(strip=True) for p in ps])
+
+    return headline, publisher, reporter, published_text, content
 
 
 def main():
@@ -205,13 +242,15 @@ def main():
     rows = []
     for list_title, url in news:
         try:
-            headline, publisher, reporter, published_text = extract_detail(url)
+            # 這裡接收 5 個回傳值 (包含 content)
+            headline, publisher, reporter, published_text, content = extract_detail(url)
         except Exception as e:
             print(f"⚠️ 內頁解析失敗：{url}\n   {e}")
             continue
 
         final_title = headline or list_title
-        rows.append((final_title, publisher, reporter, published_text, url))
+        # 這裡將 5 個欄位放入 rows
+        rows.append((final_title, publisher, reporter, published_text, content, url))
 
     if not rows:
         print("❌ 沒有可寫入的新聞")
@@ -224,7 +263,7 @@ def main():
                 cur.execute(UPSERT_SQL, row)
         conn.commit()
 
-    print(f"✅ 從列表抓到 {len(news)} 則，成功寫入/更新 {len(rows)} 則新聞")
+    print(f"✅ 從列表抓到 {len(news)} 則，成功寫入/更新 {len(rows)} 則新聞 (包含內文)")
 
 
 if __name__ == "__main__":
