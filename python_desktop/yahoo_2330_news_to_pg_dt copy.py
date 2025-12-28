@@ -1,4 +1,5 @@
 import json
+import os
 import re
 from datetime import datetime, date
 from zoneinfo import ZoneInfo
@@ -9,10 +10,14 @@ import psycopg2
 from bs4 import BeautifulSoup
 from openai import OpenAI
 
-# ================= 設定區 =================
+# ================= 安全設定區（不寫死憑證） =================
+# 從環境變數讀取：
+# - NVIDIA_API_KEY：你的 NVIDIA NIM API Key
+# - PG_DSN：PostgreSQL DSN（避免把 DB 密碼寫進 Git）
+#
+# 你也可以建立 .env 檔並在本機載入（見下方說明），但 .env 不要提交到 GitHub。
 
-# ⚠️ 這裡保留你原本填寫的 API Key
-NVIDIA_API_KEY = "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"
+NVIDIA_API_KEY = os.getenv("NVIDIA_API_KEY")
 
 BASE_URL = "https://tw.stock.yahoo.com"
 LIST_URL = "https://tw.stock.yahoo.com/quote/2330.TW/news"
