@@ -157,7 +157,7 @@ def strip_publisher_from_reporter(reporter: str | None, publisher: str | None) -
     # 這是為了解決圖片中「工商時報 王淑以」或「陳依旻 Yahoo財經」這類情況
     known_publishers = [
         "工商時報", "經濟日報", "時報資訊", "中央社", "Yahoo財經", "Yahoo", 
-        "中時新聞網", "中時", "旺報", "財訊快報", "財訊"
+        "中時新聞網", "中時", "旺報", "財訊快報", "財訊","東森財經", "東森新聞", "東森"
     ]
     for pub in known_publishers:
         r = r.replace(pub, "")
