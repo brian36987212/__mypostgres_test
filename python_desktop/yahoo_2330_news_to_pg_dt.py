@@ -90,7 +90,7 @@ def get_nvidia_sentiment_score(text: str) -> int:
         score = int(re.search(r"\d+", result).group())
         return max(1, min(9, score))
     except Exception as e:
-        print(f"⚠️ 情緒分析失敗: {e}")
+        print(f"[WARN] sentiment analysis failed: {e}")
         return None
 
 
@@ -252,7 +252,7 @@ def main():
     news = extract_news(list_html)
 
     if not news:
-        print("❌ 沒抓到新聞")
+        print("[ERROR] no news fetched")
         return
 
     rows = []
@@ -262,8 +262,8 @@ def main():
     now_dt = datetime.now(ZoneInfo("Asia/Taipei"))
     today_date = now_dt.date()
     
-    print(f"📅 目前時間: {now_dt} (只抓取日期: {today_date} 的新聞)")
-    print(f"🔍 列表找到 {len(news)} 則連結，開始解析...")
+    print(f"[TIME] now={now_dt} (filter date={today_date})")
+    print(f"[INFO] found {len(news)} links, start processing...")
     
     for i, (list_title, url) in enumerate(news):
         try:
@@ -292,7 +292,7 @@ def main():
             current_fetched_time = now_dt.time()
             
             processed_count += 1
-            print(f"  [{processed_count}] ✅ 寫入 | 分數:{sentiment_score} | 記者:{reporter} | {final_title}")
+            print(f"[OK] {processed_count} score={sentiment_score} reporter={reporter} title={final_title}")
 
             rows.append((
                 final_title, 
@@ -308,11 +308,11 @@ def main():
             ))
 
         except Exception as e:
-            print(f"⚠️ 內頁解析失敗：{url}\n   {e}")
+            print(f"[ERROR] article parse failed: {url} | {e}")
             continue
 
     if not rows:
-        print("❌ 今日沒有符合的新聞")
+        print("[INFO] no matching news for today")
         return
 
     with psycopg2.connect(PG_DSN) as conn:
@@ -322,7 +322,7 @@ def main():
                 cur.execute(UPSERT_SQL, row)
         conn.commit()
 
-    print(f"🎉 完成！成功寫入 {len(rows)} 則新聞")
+    print(f"[DONE] completed, inserted {len(rows)} records")
 
 if __name__ == "__main__":
     main()
