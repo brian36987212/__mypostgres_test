@@ -1,33 +1,25 @@
-Traceback (most recent call last):
-  File "D:\__mypostgres_test\python_desktop\yahoo_2330_news_to_pg_dt.py", line 328, in <module>
-    main()
-    ~~~~^^
-  File "D:\__mypostgres_test\python_desktop\yahoo_2330_news_to_pg_dt.py", line 265, in main
-    print(f"\U0001f4c5 目前時間: {now_dt} (只抓取日期: {today_date} 的新聞)")
-    ~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-UnicodeEncodeError: 'cp950' codec can't encode character '\U0001f4c5' in position 0: illegal multibyte sequence
-^C^C^C[TIME] now=2026-01-06 17:59:58.045285+08:00 (filter date=2026-01-06)
+[TIME] now=2026-01-15 12:55:39.516432+08:00 (filter date=2026-01-15)
 [INFO] found 20 links, start processing...
-[OK] 1 score=9 reporter=葉憶如 title=台股再刷30576點新高 台積電同創1705元高點/面板雙虎量能炸鍋 百萬張全場最強/記憶體群雄出列 多頭輪動搶戲 ｜Yahoo財經掃描
-[OK] 2 score=9 reporter=None title=《台北股市》台積電續飆！「高積量ETF」漲幅前10大曝 這檔最高衝逾8%
-[OK] 3 score=8 reporter=None title=單井114/2/7~115/1/6取得TSM-US 15,600股，計約378萬美元
-[OK] 4 score=8 reporter=None title=1/6證交所盤後定價交易成交金額前20名排行
-[OK] 5 score=9 reporter=None title=《台股盤後》收漲471點、日K連四紅，續寫新高
-[OK] 6 score=8 reporter=None title=【公告】單井最近一年累積取得有價證券達公告標準
-[OK] 7 score=9 reporter=邱怡萱 title=台積電入列！外媒點名元月4檔非買不可 噴漲理由太威
-[OK] 8 score=9 reporter=None title=單井 公告本公司最近一年累積取得有價證券達公告標準
-[OK] 9 score=9 reporter=None title=華邦電飆漲！ 藝人香蕉「從13抱到95元」獲利曝光超驚人
-[OK] 10 score=9 reporter=None title=預言「台積電跌破500」大翻車還要魏哲家下台 台大管院副教授「悄刪文」
-[OK] 11 score=9 reporter=None title=《台北股市》台股創高不等人 外資回頭追買28億 自營商續拱行情
-[OK] 12 score=8 reporter=許如鎧 title=【Follow 法人】外資提款台積電鴻海合計165億元 反手掃貨近2萬張國巨
-[OK] 13 score=8 reporter=None title=映泰114/4/1~115/1/6取得台積電195張，計約3.11億元
-[OK] 14 score=5 reporter=None title=「台積宅」退燒，僅嘉義太保、朴子仍維持漲勢
-[OK] 15 score=8 reporter=None title=映泰 公告本公司取得有價證券
-[OK] 16 score=9 reporter=江明晏 title=【台股盤後】台股漲471點收30576點再寫紀錄 台積電新天價1705元
-[OK] 17 score=9 reporter=魏喬怡 title=台積電續飆！高積量台股ETF漲幅前十名出列 這檔今年最高衝逾8％
-[OK] 18 score=9 reporter=None title=台股衝到不行！今收盤又漲471點 兩天漲逾1000點
-[OK] 19 score=9 reporter=郭鴻慧 title=《盤後解析》台積電站上新高峰 台股續創新猷
-[OK] 20 score=9 reporter=張建中 title=台積電創新天價1705元 市值攀至44.21兆元
+[OK] 1 score=9 reporter=None title=《產業》嘉義台積宅房價漲破6成 晚一年買多付千萬
+[OK] 2 score=8 reporter=陳于晴 title=台積電法說前全球科技股盤整以待 這檔海外主動式ETF周漲3%突圍
+[OK] 3 score=8 reporter=None title=《熱門族群》被動元件還有戲？4顆紅燈閃耀、1檔登天
+[OK] 4 score=8 reporter=None title=台股盤中量縮整理，聚焦台積電法說會
+[OK] 5 score=8 reporter=陳于晴 title=融資餘額衝17年半新高！法人看台股Q1題材多 蓄勢再戰31000點
+[OK] 6 score=8 reporter=None title=台積電今法說！ 19位分析師先喊讚：淨利估增28%
+[OK] 7 score=9 reporter=None title=第一金投信：台股波動恐加大，後勢續偏多看待
+[OK] 8 score=9 reporter=曾麗芳 title=台積電股價創高、嘉義台積宅房價漲破六成！晚一年買多付千萬
+[OK] 9 score=6 reporter=None title=《美股》焦點股：陸鐵拳伺候？輝達、博通慘跌；AI狂歡 重磅IPO上路
+[OK] 10 score=8 reporter=江明晏 title=【台股盤中】指數跌逾200點 台積電熄火、股王信驊續創天價
+[OK] 11 score=8 reporter=鄭思楠 title=法說倒數先殺！台積電失守1700元、市值掉到44兆 外資操作藏玄機
+[OK] 12 score=9 reporter=None title=《熱門族群》傳美降台關稅 華城5天暴漲近3成領漲重電
+[OK] 13 score=8 reporter=None title=《台北股市》神山法說3重點 蔡明翰揭6檔一路賺
+[OK] 14 score=8 reporter=None title=《電零組》國巨*喊上3字頭！老手警「這價位」要跑(2-2)
+[OK] 15 score=8 reporter=None title=《電零組》國巨*喊上3字頭！老手警「這價位」要跑(2-1)
+[OK] 16 score=9 reporter=None title=《國際產業》台積電Q4淨利估增近3成 續創高可待
+[OK] 17 score=8 reporter=張珈睿 title=台積法說前放招！半導體232條款出爐 符合這些條件免課稅
+[OK] 18 score=8 reporter=鄭郁平 title=台積電法說前夕 台指期早盤漲多回檔
+[OK] 19 score=5 reporter=黃皓宸 title=〈台股開盤〉3萬1關前拉回跌逾200點 台積電法說倒數跌破1700元
+[OK] 20 score=9 reporter=None title=《台北股市》盤中焦點股：鑫科、台玻、億豐、南亞科、千興(2-1)
 [DONE] completed, inserted 20 records
 Traceback (most recent call last):
   File "C:\Users\brian\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\urllib3\connection.py", line 204, in _new_conn
@@ -108,3 +100,11 @@ Traceback (most recent call last):
   File "C:\Users\brian\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\requests\adapters.py", line 677, in send
     raise ConnectionError(e, request=request)
 requests.exceptions.ConnectionError: HTTPSConnectionPool(host='tw.stock.yahoo.com', port=443): Max retries exceeded with url: /quote/2330.TW/news (Caused by NameResolutionError("HTTPSConnection(host='tw.stock.yahoo.com', port=443): Failed to resolve 'tw.stock.yahoo.com' ([Errno 11001] getaddrinfo failed)"))
+Traceback (most recent call last):
+  File "D:\__mypostgres_test\python_desktop\yahoo_2330_news_to_pg_dt.py", line 328, in <module>
+    main()
+    ~~~~^^
+  File "D:\__mypostgres_test\python_desktop\yahoo_2330_news_to_pg_dt.py", line 255, in main
+    print("\u274c 沒抓到新聞")
+    ~~~~~^^^^^^^^^^^^^^^^^
+UnicodeEncodeError: 'cp950' codec can't encode character '\u274c' in position 0: illegal multibyte sequence
