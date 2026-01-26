@@ -7,7 +7,6 @@ import time
 from datetime import datetime, date, timedelta
 from zoneinfo import ZoneInfo
 from urllib.parse import urljoin
-from curl_cffi.requests import AsyncSession
 
 import aiohttp
 import asyncpg
@@ -20,20 +19,19 @@ from openai import AsyncOpenAI
 # 建議將 Key 放在環境變數
 NVIDIA_API_KEY = os.getenv("NVIDIA_API_KEY")
 
-# 使用絕對路徑，確保能正確讀取中文檔名
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-STOCK_FILE = os.path.join(SCRIPT_DIR, "股票代號.xlsx")
+STOCK_FILE = "股票代號.xlsx"
 BASE_URL = "https://tw.stock.yahoo.com"
 
 # Postgres 設定 (asyncpg 使用 dsn 字串或拆開參數皆可)
 PG_DSN = "postgresql://postgres:lab529@localhost:5432/postgres"
 
-# ⚠️ 重要：同時並發數量限制 (設太大會被 Yahoo 鎖 IP，建議 2~5 之間)
-MAX_CONCURRENCY = 3
+# ⚠️ 重要：同時並發數量限制 (設太大會被 Yahoo 鎖 IP，建議 3~8 之間)
+MAX_CONCURRENCY = 5 
 
-# ⚠️ 不要手動設定 HEADERS，讓 curl_cffi 的 impersonate 自動處理
-# 手動覆蓋可能破壞 TLS 指紋一致性
-# 只在需要時加入特定 headers (例如 Referer)
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+    "Accept-Language": "zh-TW,zh;q=0.9",
+}
 
 WEEKDAY_ZH = ["週一", "週二", "週三", "週四", "週五", "週六", "週日"]
 
@@ -112,44 +110,21 @@ def strip_publisher_from_reporter(reporter: str | None, publisher: str | None) -
 
 # ================= 非同步核心區 =================
 
-async def get_html_async(session: AsyncSession, url: str, referer: str = None) -> str:
-    """
-    使用 curl_cffi 的 AsyncSession 進行請求
-    注意：curl_cffi 的 response.text 是屬性，不需要 await
-    """
-    retries = 3
+async def get_html_async(session: aiohttp.ClientSession, url: str) -> str:
+    """非同步取得 HTML，包含簡單的重試機制"""
+    retries = 2
     for i in range(retries):
         try:
-            # 只在需要時加入特定 headers (例如 Referer)
-            # 其他 headers 由 impersonate 自動處理
-            extra_headers = {}
-            if referer:
-                extra_headers["Referer"] = referer
-            
-            # 加入隨機延遲，模擬人類行為
-            if i > 0:
-                await asyncio.sleep(random.uniform(3, 8))
-            
-            response = await session.get(url, headers=extra_headers if extra_headers else None, timeout=20)
-            
-            # 檢查狀態碼
-            if response.status_code == 200:
-                return response.text
-            elif response.status_code in [403, 429]:
-                wait_time = random.uniform(8, 15) * (i + 1)
-                print(f"⚠️ 被擋 ({response.status_code})，休息 {wait_time:.1f}秒 再試... {url}")
-                await asyncio.sleep(wait_time)
-            else:
-                # 404 或其他錯誤
-                print(f"⚠️ HTTP {response.status_code}: {url}")
-                return None
-                
+            async with session.get(url, headers=HEADERS, timeout=15) as response:
+                response.raise_for_status()
+                return await response.text()
         except Exception as e:
             if i == retries - 1:
-                print(f"⚠️ 請求失敗 ({url}): {e}")
+                # print(f"⚠️ 請求失敗 ({url}): {e}")
                 return None
-            await asyncio.sleep(random.uniform(2, 5))
+            await asyncio.sleep(1) # 重試前休息一下
     return None
+
 async def get_nvidia_sentiment_score_async(client: AsyncOpenAI, text: str) -> int:
     """非同步呼叫 NVIDIA/OpenAI API"""
     if not text or len(text) < 10: return None
@@ -237,7 +212,7 @@ def parse_detail_page(html: str):
 
     return headline, publisher, reporter, published_text, content, published_dt
 
-async def process_stock(sem: asyncio.Semaphore, session: AsyncSession, db_pool: asyncpg.Pool, ai_client: AsyncOpenAI, stock_code: str):
+async def process_stock(sem: asyncio.Semaphore, session: aiohttp.ClientSession, db_pool: asyncpg.Pool, ai_client: AsyncOpenAI, stock_code: str):
     """處理單一股票的完整流程"""
     
     # 使用 Semaphore 控制並發數量，避免被鎖 IP
@@ -249,7 +224,7 @@ async def process_stock(sem: asyncio.Semaphore, session: AsyncSession, db_pool: 
             target_url = f"https://tw.stock.yahoo.com/quote/{stock_code}/news"
 
         # 稍微隨機等待，讓請求不要像機關槍一樣規律
-        await asyncio.sleep(random.uniform(1.5, 4.0))
+        await asyncio.sleep(random.uniform(0.5, 2.0))
         
         # 1. 抓取列表
         list_html = await get_html_async(session, target_url)
@@ -267,11 +242,9 @@ async def process_stock(sem: asyncio.Semaphore, session: AsyncSession, db_pool: 
         # 2. 逐一處理該股票的新聞
         # 這裡我們選擇「依序」處理該股票的新聞，避免單一股票同時發出太多內頁請求
         for list_title, url in news_list:
-            # 每個內頁請求前加入隨機延遲
-            await asyncio.sleep(random.uniform(0.8, 2.5))
             
-            # 2.1 抓取內頁，帶上 Referer
-            detail_html = await get_html_async(session, url, referer=target_url)
+            # 2.1 抓取內頁
+            detail_html = await get_html_async(session, url)
             detail = parse_detail_page(detail_html)
             if not detail: continue
 
@@ -331,16 +304,7 @@ async def main():
     # 3. 建立並發控制與 Session
     sem = asyncio.Semaphore(MAX_CONCURRENCY)
     
-    # ⚠️ 使用更新的 Chrome 版本進行偽裝
-    async with AsyncSession(impersonate="chrome120") as session:
-        # ⚠️ 建議：先訪問一下首頁，讓 Yahoo 覺得你是正常人，並取得 Cookies
-        print("🌍 正在訪問 Yahoo 首頁建立 Session...")
-        try:
-            await session.get("https://tw.stock.yahoo.com/", timeout=15)
-            await asyncio.sleep(random.uniform(2, 4))
-            print("✅ Session 建立成功")
-        except Exception as e:
-            print(f"⚠️ 首頁訪問失敗: {e}，繼續執行...")
+    async with aiohttp.ClientSession() as session:
         tasks = []
         for stock_code in stock_list:
             stock_code = str(stock_code).strip()
