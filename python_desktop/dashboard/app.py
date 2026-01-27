@@ -99,16 +99,17 @@ async def _get_top_stocks():
     pool = await get_db_pool()
     async with pool.acquire() as conn:
         rows = await conn.fetch("""
-            SELECT stock_id, COUNT(*) as news_count
-            FROM yahoo_stock_news
-            GROUP BY stock_id
+            SELECT n.stock_id, COALESCE(m.stock_name, n.stock_id) as stock_name, COUNT(*) as news_count
+            FROM yahoo_stock_news n
+            LEFT JOIN stock_mapping m ON n.stock_id = m.stock_id
+            GROUP BY n.stock_id, m.stock_name
             ORDER BY news_count DESC
             LIMIT 10
         """)
     await pool.close()
     
     return {
-        'labels': [row['stock_id'] for row in rows],
+        'labels': [row['stock_name'] for row in rows],
         'data': [row['news_count'] for row in rows]
     }
 
@@ -125,15 +126,18 @@ async def _get_recent_news():
     pool = await get_db_pool()
     async with pool.acquire() as conn:
         rows = await conn.fetch("""
-            SELECT stock_id, title, publisher, sentiment_score, published_text, fetched_at
-            FROM yahoo_stock_news
-            ORDER BY fetched_at DESC
+            SELECT n.stock_id, COALESCE(m.stock_name, n.stock_id) as stock_name,
+                   n.title, n.publisher, n.sentiment_score, n.published_text, n.fetched_at
+            FROM yahoo_stock_news n
+            LEFT JOIN stock_mapping m ON n.stock_id = m.stock_id
+            ORDER BY n.fetched_at DESC
             LIMIT 20
         """)
     await pool.close()
     
     return [{
         'stock_id': row['stock_id'],
+        'stock_name': row['stock_name'],
         'title': row['title'],
         'publisher': row['publisher'],
         'sentiment_score': row['sentiment_score'],
