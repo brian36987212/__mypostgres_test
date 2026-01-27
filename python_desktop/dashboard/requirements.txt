@@ -1,2 +1,4 @@
 flask
 asyncpg
+line-bot-sdk
+python-dotenv

@@ -4,3 +4,7 @@ lxml
 psycopg2-binary
 openai
 python-dotenv
+flask
+asyncpg
+gunicorn
+line-bot-sdk
