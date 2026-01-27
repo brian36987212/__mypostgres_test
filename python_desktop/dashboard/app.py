@@ -22,7 +22,7 @@ def add_header(response):
     response.headers["Expires"] = "0"
     return response
 
-PG_DSN = os.getenv('DATABASE_URL', 'postgresql://postgres:lab529@localhost:5432/postgres')
+PG_DSN = "postgresql://postgres:lab529@localhost:5432/postgres"
 
 # LINE Bot 設定
 LINE_CHANNEL_SECRET = os.getenv('LINE_CHANNEL_SECRET', '')
@@ -340,6 +340,6 @@ async def get_sentiment_news_text(min_score, max_score):
     return result
 
 if __name__ == '__main__':
-    port = int(os.getenv('PORT', 5000))
-    app.run(debug=False, host='0.0.0.0', port=port)
+    app.run(debug=True, host='0.0.0.0', port=5000)
+
 
