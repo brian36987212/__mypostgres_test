@@ -12,23 +12,19 @@ from curl_cffi.requests import AsyncSession
 import asyncpg
 import pandas as pd
 from bs4 import BeautifulSoup
-from openai import AsyncOpenAI
 
 # ================= 爬蟲等級配置 =================
 CRAWLER_TIER = "偏下股"  # 🐢 識別標記
+STOCK_TIER = "lower"  # 🐢 股票分級標記
 STOCK_FILE = "../../stocks_category/股票代號_偏下_v2.csv"
 PROGRESS_FILE = "progress_lower.txt"
-DAYS_FILTER = 30  # 🔥 過濾天數：抓 30 天內新聞
-MAX_CONCURRENCY = 2  # 🔥 並發數（保守模式）
+MAX_CONCURRENCY = 2  # 🐢 並發數（保守模式）
 
 # 延遲範圍 (秒)
 STOCK_DELAY_RANGE = (4.0, 7.0)  # 股票間延遲
 NEWS_DELAY_RANGE = (2.0, 4.0)   # 新聞間延遲
 
 # ================= 通用設定區 =================
-
-# 建議將 Key 放在環境變數
-NVIDIA_API_KEY = os.getenv("NVIDIA_API_KEY")
 
 BASE_URL = "https://tw.stock.yahoo.com"
 
@@ -65,6 +61,7 @@ CREATE TABLE IF NOT EXISTS public.yahoo_stock_news (
   content TEXT,
   sentiment_score INTEGER,
   url TEXT NOT NULL,
+  stock_tier TEXT,
   fetched_at TIMESTAMPTZ,
   fetched_date DATE,
   fetched_time TIME,
@@ -74,8 +71,8 @@ CREATE TABLE IF NOT EXISTS public.yahoo_stock_news (
 
 UPSERT_SQL = """
 INSERT INTO public.yahoo_stock_news
-(stock_id, title, publisher, reporter, published_text, content, sentiment_score, url, fetched_at, fetched_date, fetched_time)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+(stock_id, title, publisher, reporter, published_text, content, sentiment_score, url, stock_tier, fetched_at, fetched_date, fetched_time)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 ON CONFLICT (stock_id, url) DO UPDATE SET
   title = EXCLUDED.title,
   publisher = EXCLUDED.publisher,
@@ -83,6 +80,7 @@ ON CONFLICT (stock_id, url) DO UPDATE SET
   published_text = EXCLUDED.published_text,
   content = EXCLUDED.content,
   sentiment_score = EXCLUDED.sentiment_score,
+  stock_tier = EXCLUDED.stock_tier,
   fetched_at = EXCLUDED.fetched_at,
   fetched_date = EXCLUDED.fetched_date,
   fetched_time = EXCLUDED.fetched_time;
@@ -165,33 +163,8 @@ async def get_html_async(session: AsyncSession, url: str, referer: str = None) -
     
     return None
 
-async def get_nvidia_sentiment_score_async(client: AsyncOpenAI, text: str) -> int:
-    if not text or len(text) < 10: return None
-    if not NVIDIA_API_KEY or "你的_NVIDIA" in NVIDIA_API_KEY: return None
 
-    prompt = f"""
-    你是一個專業的金融情緒分析師。請閱讀以下新聞文章內容，並給出一個 1 到 9 的情緒分數。
-    評分標準：1分(極度負面) ~ 5分(中性) ~ 9分(極度正面)。
-    請只回答一個數字 (1-9)，不要有任何解釋。
-    文章內容：{text[:2000]}
-    """
-    try:
-        completion = await client.chat.completions.create(
-            model="meta/llama-3.1-8b-instruct",
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.2, max_tokens=10, top_p=1
-        )
-        result = completion.choices[0].message.content.strip()
-        match = re.search(r"(\d+)", result)
-        if match:
-            score = int(match.group(1))
-            return max(1, min(9, score))
-        return None
-    except Exception as e:
-        print(f"⚠️ 情緒分析失敗: {e}")
-        return None
-
-def parse_list_page(html: str):
+def parse_list_page(html: str, limit: int = 5):
     if not html: return []
     soup = BeautifulSoup(html, "lxml")
     results = []
@@ -206,46 +179,10 @@ def parse_list_page(html: str):
         if url in seen: continue
         seen.add(url)
         results.append((list_title, url))
+        
+        if len(results) >= limit:
+            break
     return results
-
-def parse_detail_page(html: str):
-    if not html: return None
-    soup = BeautifulSoup(html, "lxml")
-    
-    headline, publisher, reporter_jsonld, published_text, content, published_dt = None, None, None, None, None, None
-
-    for tag in soup.find_all("script", attrs={"type": "application/ld+json"}):
-        raw = tag.string
-        if not raw: continue
-        try:
-            data = json.loads(raw.strip())
-            objs = data if isinstance(data, list) else [data]
-            if isinstance(data, dict) and isinstance(data.get("@graph"), list): objs = data["@graph"]
-            for obj in objs:
-                if obj.get("@type") == "NewsArticle":
-                    headline = obj.get("headline")
-                    if isinstance(obj.get("provider"), dict): publisher = obj["provider"].get("name")
-                    if isinstance(obj.get("author"), dict): reporter_jsonld = obj["author"].get("name")
-                    iso_time = obj.get("datePublished") or obj.get("dateModified")
-                    if iso_time: published_text, published_dt = format_time_yahoo_tw(iso_time)
-                    break
-        except: continue
-
-    if not reporter_jsonld:
-        meta = soup.find("meta", attrs={"name": "description"})
-        if meta:
-            m = re.search(r"記者\s*([^\s／/】]+)", meta.get("content", ""))
-            if m: reporter_jsonld = m.group(1).strip()
-
-    reporter = strip_publisher_from_reporter(reporter_jsonld, publisher)
-    
-    content_div = soup.find("div", class_="caas-body")
-    content = content_div.get_text(separator="\n", strip=True) if content_div else ""
-    if not content:
-        ps = soup.find_all("p")
-        if ps: content = "\n".join([p.get_text(strip=True) for p in ps])
-
-    return headline, publisher, reporter, published_text, content, published_dt
 
 def mark_stock_done(stock_code: str):
     with open(PROGRESS_FILE, "a", encoding="utf-8") as f:
@@ -257,7 +194,7 @@ def load_processed_stocks():
     with open(PROGRESS_FILE, "r", encoding="utf-8") as f:
         return set(line.strip() for line in f if line.strip())
 
-async def process_stock(sem: asyncio.Semaphore, session: AsyncSession, db_pool: asyncpg.Pool, ai_client: AsyncOpenAI, stock_code: str):
+async def process_stock(sem: asyncio.Semaphore, session: AsyncSession, db_pool: asyncpg.Pool, stock_code: str):
     async with sem:
         if ".TW" not in stock_code and ".TWO" not in stock_code:
             target_url = f"https://tw.stock.yahoo.com/quote/{stock_code}.TW/news"
@@ -274,37 +211,17 @@ async def process_stock(sem: asyncio.Semaphore, session: AsyncSession, db_pool: 
             mark_stock_done(stock_code)
             return
 
-        print(f"🚀 ({stock_code}) 掃描到 {len(news_list)} 則新聞，開始解析...")
-        
-        today_date = datetime.now(ZoneInfo("Asia/Taipei")).date()
+        print(f"🚀 ({stock_code}) 掃描到 {len(news_list)} 則新聞，開始儲存...")
         processed_count = 0
-        
         for list_title, url in news_list:
-            await asyncio.sleep(random.uniform(*NEWS_DELAY_RANGE))
-            detail_html = await get_html_async(session, url, referer=target_url)
-            detail = parse_detail_page(detail_html)
-            if not detail: continue
-
-            headline, publisher, reporter, published_text, content, pub_dt = detail
-            
-            if not pub_dt: continue
-            days_diff = (today_date - pub_dt.date()).days
-            if days_diff > DAYS_FILTER:
-                continue
-
-            final_title = headline or list_title
-            
-            sentiment_score = await get_nvidia_sentiment_score_async(ai_client, content)
-            
             try:
                 now_dt = datetime.now(ZoneInfo("Asia/Taipei"))
                 async with db_pool.acquire() as conn:
                     await conn.execute(UPSERT_SQL, 
-                        stock_code, final_title, publisher, reporter, published_text, 
-                        content, sentiment_score, url, now_dt, now_dt.date(), now_dt.time()
+                        stock_code, list_title, None, None, None,
+                        None, None, url, STOCK_TIER, now_dt, now_dt.date(), now_dt.time()
                     )
                 processed_count += 1
-                print(f"   ✅ ({stock_code}) 分數:{sentiment_score} | {final_title[:10]}...")
             except Exception as e:
                 print(f"   ❌ ({stock_code}) DB 錯誤: {e}")
 
@@ -325,7 +242,7 @@ async def main():
         print(f"📄 總共 {len(all_stocks)} 支股票")
         print(f"✅ 已完成 {len(processed)} 支")
         print(f"🔄 待處理 {len(stock_list)} 支")
-        print(f"⚙️  配置：並發={MAX_CONCURRENCY}, 天數過濾={DAYS_FILTER}天")
+        print(f"⚙️  配置：並發={MAX_CONCURRENCY}")
         
         if len(stock_list) == 0:
             print("🎉 全部股票已處理完成！")
@@ -342,7 +259,7 @@ async def main():
         print(f"❌ 資料庫連線失敗: {e}")
         return
 
-    ai_client = AsyncOpenAI(base_url="https://integrate.api.nvidia.com/v1", api_key=NVIDIA_API_KEY)
+
 
     sem = asyncio.Semaphore(MAX_CONCURRENCY)
     
@@ -354,7 +271,7 @@ async def main():
             stock_code = str(stock_code).strip()
             if not stock_code: continue
             
-            task = process_stock(sem, session, pool, ai_client, stock_code)
+            task = process_stock(sem, session, pool, stock_code)
             tasks.append(task)
         
         print(f"🐢 開始並行處理 {len(tasks)} 個任務 (最大並發: {MAX_CONCURRENCY})...\n")

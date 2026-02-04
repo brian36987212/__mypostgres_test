@@ -219,3 +219,19 @@ Traceback (most recent call last):
   File "C:\Users\brian\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\requests\adapters.py", line 677, in send
     raise ConnectionError(e, request=request)
 requests.exceptions.ConnectionError: HTTPSConnectionPool(host='tw.stock.yahoo.com', port=443): Max retries exceeded with url: /quote/2330.TW/news (Caused by NameResolutionError("HTTPSConnection(host='tw.stock.yahoo.com', port=443): Failed to resolve 'tw.stock.yahoo.com' ([Errno 11001] getaddrinfo failed)"))
+Traceback (most recent call last):
+  File "D:\__mypostgres_test\python_desktop\yahoo_2330_news_to_pg_dt.py", line 328, in <module>
+    main()
+    ~~~~^^
+  File "D:\__mypostgres_test\python_desktop\yahoo_2330_news_to_pg_dt.py", line 265, in main
+    print(f"\U0001f4c5 目前時間: {now_dt} (只抓取日期: {today_date} 的新聞)")
+    ~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+UnicodeEncodeError: 'cp950' codec can't encode character '\U0001f4c5' in position 0: illegal multibyte sequence
+Traceback (most recent call last):
+  File "D:\__mypostgres_test\python_desktop\yahoo_2330_news_to_pg_dt.py", line 328, in <module>
+    main()
+    ~~~~^^
+  File "D:\__mypostgres_test\python_desktop\yahoo_2330_news_to_pg_dt.py", line 265, in main
+    print(f"\U0001f4c5 目前時間: {now_dt} (只抓取日期: {today_date} 的新聞)")
+    ~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+UnicodeEncodeError: 'cp950' codec can't encode character '\U0001f4c5' in position 0: illegal multibyte sequence

@@ -17,7 +17,7 @@ from openai import AsyncOpenAI
 CRAWLER_TIER = "偏下股"  # 識別標記
 STOCK_FILE = "../../stocks_category/股票代號_偏下_v2.csv"
 PROGRESS_FILE = "progress_cnyes_lower.txt"
-DAYS_FILTER = 3  # 過濾天數：只抓 3 天內新聞
+DAYS_FILTER = 30  # 過濾天數：只抓 30 天內新聞
 MAX_CONCURRENCY = 5  # 並發數
 
 # 延遲範圍 (秒)
