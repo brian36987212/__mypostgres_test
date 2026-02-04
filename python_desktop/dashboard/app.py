@@ -50,22 +50,42 @@ def get_stats():
 async def _get_stats():
     pool = await get_db_pool()
     async with pool.acquire() as conn:
-        # 總新聞數
-        total_news = await conn.fetchval("SELECT COUNT(*) FROM yahoo_stock_news")
+        # 總新聞數（合併兩個來源）
+        total_news = await conn.fetchval("""
+            SELECT COUNT(*) FROM (
+                SELECT id FROM yahoo_stock_news
+                UNION ALL
+                SELECT id FROM cnyes_stock_news
+            ) AS combined
+        """)
         
-        # 總股票數
-        total_stocks = await conn.fetchval("SELECT COUNT(DISTINCT stock_id) FROM yahoo_stock_news")
+        # 總股票數（合併兩個來源）
+        total_stocks = await conn.fetchval("""
+            SELECT COUNT(DISTINCT stock_id) FROM (
+                SELECT stock_id FROM yahoo_stock_news
+                UNION
+                SELECT stock_id FROM cnyes_stock_news
+            ) AS combined
+        """)
         
-        # 今日新聞數
+        # 今日新聞數（合併兩個來源）
         today = datetime.now(ZoneInfo("Asia/Taipei")).date()
-        today_news = await conn.fetchval(
-            "SELECT COUNT(*) FROM yahoo_stock_news WHERE fetched_date = $1", today
-        )
+        today_news = await conn.fetchval("""
+            SELECT COUNT(*) FROM (
+                SELECT id FROM yahoo_stock_news WHERE fetched_date = $1
+                UNION ALL
+                SELECT id FROM cnyes_stock_news WHERE fetched_date = $1
+            ) AS combined
+        """, today)
         
-        # 平均情緒分數
-        avg_sentiment = await conn.fetchval(
-            "SELECT AVG(sentiment_score) FROM yahoo_stock_news WHERE sentiment_score IS NOT NULL"
-        )
+        # 平均情緒分數（合併兩個來源）
+        avg_sentiment = await conn.fetchval("""
+            SELECT AVG(sentiment_score) FROM (
+                SELECT sentiment_score FROM yahoo_stock_news WHERE sentiment_score IS NOT NULL
+                UNION ALL
+                SELECT sentiment_score FROM cnyes_stock_news WHERE sentiment_score IS NOT NULL
+            ) AS combined
+        """)
     
     await pool.close()
     return {
@@ -89,8 +109,11 @@ async def _get_sentiment_distribution():
     async with pool.acquire() as conn:
         rows = await conn.fetch("""
             SELECT sentiment_score, COUNT(*) as count
-            FROM yahoo_stock_news
-            WHERE sentiment_score IS NOT NULL
+            FROM (
+                SELECT sentiment_score FROM yahoo_stock_news WHERE sentiment_score IS NOT NULL
+                UNION ALL
+                SELECT sentiment_score FROM cnyes_stock_news WHERE sentiment_score IS NOT NULL
+            ) AS combined
             GROUP BY sentiment_score
             ORDER BY sentiment_score
         """)
@@ -114,10 +137,14 @@ async def _get_top_stocks():
     pool = await get_db_pool()
     async with pool.acquire() as conn:
         rows = await conn.fetch("""
-            SELECT n.stock_id, COALESCE(m.stock_name, n.stock_id) as stock_name, COUNT(*) as news_count
-            FROM yahoo_stock_news n
-            LEFT JOIN stock_mapping m ON n.stock_id = m.stock_id
-            GROUP BY n.stock_id, m.stock_name
+            SELECT combined.stock_id, COALESCE(m.stock_name, combined.stock_id) as stock_name, SUM(news_count) as news_count
+            FROM (
+                SELECT stock_id, COUNT(*) as news_count FROM yahoo_stock_news GROUP BY stock_id
+                UNION ALL
+                SELECT stock_id, COUNT(*) as news_count FROM cnyes_stock_news GROUP BY stock_id
+            ) AS combined
+            LEFT JOIN stock_mapping m ON combined.stock_id = m.stock_id
+            GROUP BY combined.stock_id, m.stock_name
             ORDER BY news_count DESC
             LIMIT 10
         """)
@@ -141,11 +168,22 @@ async def _get_recent_news():
     pool = await get_db_pool()
     async with pool.acquire() as conn:
         rows = await conn.fetch("""
-            SELECT n.stock_id, COALESCE(m.stock_name, n.stock_id) as stock_name,
-                   n.title, n.publisher, n.sentiment_score, n.published_text, n.fetched_at
-            FROM yahoo_stock_news n
-            LEFT JOIN stock_mapping m ON n.stock_id = m.stock_id
-            ORDER BY n.fetched_at DESC
+            SELECT stock_id, stock_name, title, publisher, sentiment_score, published_text, fetched_at, source
+            FROM (
+                SELECT n.stock_id, COALESCE(m.stock_name, n.stock_id) as stock_name,
+                       n.title, n.publisher, n.sentiment_score, n.published_text, n.fetched_at,
+                       'Yahoo' as source
+                FROM yahoo_stock_news n
+                LEFT JOIN stock_mapping m ON n.stock_id = m.stock_id
+                UNION ALL
+                SELECT n.stock_id, COALESCE(m.stock_name, n.stock_id) as stock_name,
+                       n.title, n.category_name as publisher, n.sentiment_score, 
+                       TO_CHAR(n.published_at, 'YYYY年MM月DD日 HH24:MI') as published_text, 
+                       n.fetched_at, '鉅亨網' as source
+                FROM cnyes_stock_news n
+                LEFT JOIN stock_mapping m ON n.stock_id = m.stock_id
+            ) AS combined
+            ORDER BY fetched_at DESC
             LIMIT 20
         """)
     await pool.close()
@@ -157,7 +195,8 @@ async def _get_recent_news():
         'publisher': row['publisher'],
         'sentiment_score': row['sentiment_score'],
         'published_text': row['published_text'],
-        'fetched_at': row['fetched_at'].isoformat() if row['fetched_at'] else None
+        'fetched_at': row['fetched_at'].isoformat() if row['fetched_at'] else None,
+        'source': row['source']
     } for row in rows]
 
 @app.route('/api/daily_trend')
@@ -173,9 +212,18 @@ async def _get_daily_trend():
     pool = await get_db_pool()
     async with pool.acquire() as conn:
         rows = await conn.fetch("""
-            SELECT fetched_date, COUNT(*) as count
-            FROM yahoo_stock_news
-            WHERE fetched_date >= CURRENT_DATE - INTERVAL '30 days'
+            SELECT fetched_date, SUM(count) as count
+            FROM (
+                SELECT fetched_date, COUNT(*) as count
+                FROM yahoo_stock_news
+                WHERE fetched_date >= CURRENT_DATE - INTERVAL '30 days'
+                GROUP BY fetched_date
+                UNION ALL
+                SELECT fetched_date, COUNT(*) as count
+                FROM cnyes_stock_news
+                WHERE fetched_date >= CURRENT_DATE - INTERVAL '30 days'
+                GROUP BY fetched_date
+            ) AS combined
             GROUP BY fetched_date
             ORDER BY fetched_date
         """)
@@ -250,11 +298,21 @@ async def query_stock_news(stock_name):
     pool = await get_db_pool()
     async with pool.acquire() as conn:
         rows = await conn.fetch("""
-            SELECT n.title, n.sentiment_score, n.published_text, n.publisher
-            FROM yahoo_stock_news n
-            LEFT JOIN stock_mapping m ON n.stock_id = m.stock_id
-            WHERE m.stock_name LIKE $1 OR n.stock_id LIKE $1
-            ORDER BY n.fetched_at DESC
+            SELECT title, sentiment_score, published_text, publisher, source, fetched_at
+            FROM (
+                SELECT n.title, n.sentiment_score, n.published_text, n.publisher, 'Yahoo' as source, n.fetched_at
+                FROM yahoo_stock_news n
+                LEFT JOIN stock_mapping m ON n.stock_id = m.stock_id
+                WHERE m.stock_name LIKE $1 OR n.stock_id LIKE $1
+                UNION ALL
+                SELECT n.title, n.sentiment_score, 
+                       TO_CHAR(n.published_at, 'YYYY年MM月DD日 HH24:MI') as published_text,
+                       n.category_name as publisher, '鉅亨網' as source, n.fetched_at
+                FROM cnyes_stock_news n
+                LEFT JOIN stock_mapping m ON n.stock_id = m.stock_id
+                WHERE m.stock_name LIKE $1 OR n.stock_id LIKE $1
+            ) AS combined
+            ORDER BY fetched_at DESC
             LIMIT 5
         """, f'%{stock_name}%')
     await pool.close()
@@ -266,7 +324,8 @@ async def query_stock_news(stock_name):
     for row in rows:
         emoji = "📈" if row['sentiment_score'] and row['sentiment_score'] >= 7 else "📉" if row['sentiment_score'] and row['sentiment_score'] <= 3 else "➡️"
         score = f"[{row['sentiment_score']}]" if row['sentiment_score'] else ""
-        result += f"{emoji} {score} {row['title']}\n"
+        source_tag = f"[{row['source']}]"
+        result += f"{emoji} {score} {source_tag} {row['title']}\n"
         result += f"   {row['publisher']} | {row['published_text']}\n\n"
     
     return result
@@ -276,10 +335,14 @@ async def get_top_stocks_text():
     pool = await get_db_pool()
     async with pool.acquire() as conn:
         rows = await conn.fetch("""
-            SELECT COALESCE(m.stock_name, n.stock_id) as stock_name, COUNT(*) as news_count
-            FROM yahoo_stock_news n
-            LEFT JOIN stock_mapping m ON n.stock_id = m.stock_id
-            GROUP BY n.stock_id, m.stock_name
+            SELECT COALESCE(m.stock_name, combined.stock_id) as stock_name, SUM(news_count) as news_count
+            FROM (
+                SELECT stock_id, COUNT(*) as news_count FROM yahoo_stock_news GROUP BY stock_id
+                UNION ALL
+                SELECT stock_id, COUNT(*) as news_count FROM cnyes_stock_news GROUP BY stock_id
+            ) AS combined
+            LEFT JOIN stock_mapping m ON combined.stock_id = m.stock_id
+            GROUP BY combined.stock_id, m.stock_name
             ORDER BY news_count DESC
             LIMIT 10
         """)
@@ -296,11 +359,21 @@ async def get_latest_news_text():
     pool = await get_db_pool()
     async with pool.acquire() as conn:
         rows = await conn.fetch("""
-            SELECT COALESCE(m.stock_name, n.stock_id) as stock_name,
-                   n.title, n.sentiment_score, n.published_text
-            FROM yahoo_stock_news n
-            LEFT JOIN stock_mapping m ON n.stock_id = m.stock_id
-            ORDER BY n.fetched_at DESC
+            SELECT stock_name, title, sentiment_score, published_text, source, fetched_at
+            FROM (
+                SELECT COALESCE(m.stock_name, n.stock_id) as stock_name,
+                       n.title, n.sentiment_score, n.published_text, 'Yahoo' as source, n.fetched_at
+                FROM yahoo_stock_news n
+                LEFT JOIN stock_mapping m ON n.stock_id = m.stock_id
+                UNION ALL
+                SELECT COALESCE(m.stock_name, n.stock_id) as stock_name,
+                       n.title, n.sentiment_score, 
+                       TO_CHAR(n.published_at, 'YYYY年MM月DD日 HH24:MI') as published_text,
+                       '鉅亨網' as source, n.fetched_at
+                FROM cnyes_stock_news n
+                LEFT JOIN stock_mapping m ON n.stock_id = m.stock_id
+            ) AS combined
+            ORDER BY fetched_at DESC
             LIMIT 5
         """)
     await pool.close()
@@ -309,7 +382,8 @@ async def get_latest_news_text():
     for row in rows:
         emoji = "📈" if row['sentiment_score'] and row['sentiment_score'] >= 7 else "📉" if row['sentiment_score'] and row['sentiment_score'] <= 3 else "➡️"
         score = f"[{row['sentiment_score']}]" if row['sentiment_score'] else ""
-        result += f"{emoji} {row['stock_name']} {score}\n{row['title']}\n\n"
+        source_tag = f"[{row['source']}]"
+        result += f"{emoji} {row['stock_name']} {score} {source_tag}\n{row['title']}\n\n"
     
     return result
 
@@ -318,12 +392,21 @@ async def get_sentiment_news_text(min_score, max_score):
     pool = await get_db_pool()
     async with pool.acquire() as conn:
         rows = await conn.fetch("""
-            SELECT COALESCE(m.stock_name, n.stock_id) as stock_name,
-                   n.title, n.sentiment_score
-            FROM yahoo_stock_news n
-            LEFT JOIN stock_mapping m ON n.stock_id = m.stock_id
-            WHERE n.sentiment_score BETWEEN $1 AND $2
-            ORDER BY n.fetched_at DESC
+            SELECT stock_name, title, sentiment_score, source
+            FROM (
+                SELECT COALESCE(m.stock_name, n.stock_id) as stock_name,
+                       n.title, n.sentiment_score, 'Yahoo' as source, n.fetched_at
+                FROM yahoo_stock_news n
+                LEFT JOIN stock_mapping m ON n.stock_id = m.stock_id
+                WHERE n.sentiment_score BETWEEN $1 AND $2
+                UNION ALL
+                SELECT COALESCE(m.stock_name, n.stock_id) as stock_name,
+                       n.title, n.sentiment_score, '鉅亨網' as source, n.fetched_at
+                FROM cnyes_stock_news n
+                LEFT JOIN stock_mapping m ON n.stock_id = m.stock_id
+                WHERE n.sentiment_score BETWEEN $1 AND $2
+            ) AS combined
+            ORDER BY fetched_at DESC
             LIMIT 5
         """, min_score, max_score)
     await pool.close()
@@ -335,7 +418,8 @@ async def get_sentiment_news_text(min_score, max_score):
         return f"目前沒有{sentiment_type}情緒的新聞"
     
     for row in rows:
-        result += f"[{row['sentiment_score']}] {row['stock_name']}\n{row['title']}\n\n"
+        source_tag = f"[{row['source']}]"
+        result += f"[{row['sentiment_score']}] {source_tag} {row['stock_name']}\n{row['title']}\n\n"
     
     return result
 
