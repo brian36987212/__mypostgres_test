@@ -234,6 +234,112 @@ async def _get_daily_trend():
         'data': [row['count'] for row in rows]
     }
 
+@app.route('/api/weekly_analysis')
+def get_weekly_analysis():
+    """取得最近一周新聞分析"""
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    result = loop.run_until_complete(_get_weekly_analysis())
+    loop.close()
+    return jsonify(result)
+
+async def _get_weekly_analysis():
+    pool = await get_db_pool()
+    async with pool.acquire() as conn:
+        # 一周前的日期
+        week_ago = (datetime.now(ZoneInfo("Asia/Taipei")) - timedelta(days=7)).date()
+        
+        # 一周總新聞數
+        total_news = await conn.fetchval("""
+            SELECT COUNT(*) FROM (
+                SELECT id FROM yahoo_stock_news WHERE fetched_date >= $1
+                UNION ALL
+                SELECT id FROM cnyes_stock_news WHERE fetched_date >= $1
+            ) AS combined
+        """, week_ago)
+        
+        # 一周平均情緒
+        avg_sentiment = await conn.fetchval("""
+            SELECT AVG(sentiment_score) FROM (
+                SELECT sentiment_score FROM yahoo_stock_news 
+                WHERE sentiment_score IS NOT NULL AND fetched_date >= $1
+                UNION ALL
+                SELECT sentiment_score FROM cnyes_stock_news 
+                WHERE sentiment_score IS NOT NULL AND fetched_date >= $1
+            ) AS combined
+        """, week_ago)
+        
+        # 一周熱門股票 TOP 5
+        top_stocks = await conn.fetch("""
+            SELECT combined.stock_id, COALESCE(m.stock_name, combined.stock_id) as stock_name, SUM(news_count) as news_count
+            FROM (
+                SELECT stock_id, COUNT(*) as news_count FROM yahoo_stock_news WHERE fetched_date >= $1 GROUP BY stock_id
+                UNION ALL
+                SELECT stock_id, COUNT(*) as news_count FROM cnyes_stock_news WHERE fetched_date >= $1 GROUP BY stock_id
+            ) AS combined
+            LEFT JOIN stock_mapping m ON combined.stock_id = m.stock_id
+            GROUP BY combined.stock_id, m.stock_name
+            ORDER BY news_count DESC
+            LIMIT 5
+        """, week_ago)
+        
+        # 正面/負面新聞數
+        positive_count = await conn.fetchval("""
+            SELECT COUNT(*) FROM (
+                SELECT id FROM yahoo_stock_news WHERE sentiment_score >= 7 AND fetched_date >= $1
+                UNION ALL
+                SELECT id FROM cnyes_stock_news WHERE sentiment_score >= 7 AND fetched_date >= $1
+            ) AS combined
+        """, week_ago)
+        
+        negative_count = await conn.fetchval("""
+            SELECT COUNT(*) FROM (
+                SELECT id FROM yahoo_stock_news WHERE sentiment_score <= 3 AND fetched_date >= $1
+                UNION ALL
+                SELECT id FROM cnyes_stock_news WHERE sentiment_score <= 3 AND fetched_date >= $1
+            ) AS combined
+        """, week_ago)
+        
+    await pool.close()
+    return {
+        'total_news': total_news,
+        'avg_sentiment': round(avg_sentiment, 2) if avg_sentiment else None,
+        'top_stocks': [{'stock_name': row['stock_name'], 'news_count': row['news_count']} for row in top_stocks],
+        'positive_count': positive_count,
+        'negative_count': negative_count
+    }
+
+@app.route('/api/weekly_sentiment_trend')
+def get_weekly_sentiment_trend():
+    """取得一周情緒趨勢"""
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    result = loop.run_until_complete(_get_weekly_sentiment_trend())
+    loop.close()
+    return jsonify(result)
+
+async def _get_weekly_sentiment_trend():
+    pool = await get_db_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch("""
+            SELECT fetched_date, AVG(sentiment_score) as avg_sentiment
+            FROM (
+                SELECT fetched_date, sentiment_score FROM yahoo_stock_news 
+                WHERE sentiment_score IS NOT NULL AND fetched_date >= CURRENT_DATE - INTERVAL '7 days'
+                UNION ALL
+                SELECT fetched_date, sentiment_score FROM cnyes_stock_news 
+                WHERE sentiment_score IS NOT NULL AND fetched_date >= CURRENT_DATE - INTERVAL '7 days'
+            ) AS combined
+            GROUP BY fetched_date
+            ORDER BY fetched_date
+        """)
+    await pool.close()
+    
+    return {
+        'labels': [row['fetched_date'].strftime('%m/%d') for row in rows],
+        'data': [round(row['avg_sentiment'], 2) if row['avg_sentiment'] else 0 for row in rows]
+    }
+
 # ================= LINE Bot Webhook =================
 
 @app.route("/webhook", methods=['POST'])
@@ -262,7 +368,14 @@ def handle_message(event):
     asyncio.set_event_loop(loop)
     
     try:
-        if user_text.startswith("查詢"):
+        # 檢查是否為「股票名稱 一周」格式
+        if " 一周" in user_text or " 本周" in user_text:
+            stock_name = user_text.replace(" 一周", "").replace(" 本周", "").strip()
+            if stock_name:  # 有指定股票名稱
+                reply = loop.run_until_complete(get_stock_weekly_analysis_text(stock_name))
+            else:  # 只輸入"一周"或"本周"
+                reply = loop.run_until_complete(get_weekly_analysis_text())
+        elif user_text.startswith("查詢"):
             stock_name = user_text.replace("查詢", "").strip()
             reply = loop.run_until_complete(query_stock_news(stock_name))
         elif user_text == "熱門":
@@ -273,6 +386,8 @@ def handle_message(event):
             reply = loop.run_until_complete(get_sentiment_news_text(7, 9))
         elif user_text == "負面":
             reply = loop.run_until_complete(get_sentiment_news_text(1, 3))
+        elif user_text == "一周" or user_text == "本周":
+            reply = loop.run_until_complete(get_weekly_analysis_text())
         else:
             reply = """📊 股市新聞 Bot 指令說明：
 
@@ -281,8 +396,12 @@ def handle_message(event):
 最新 - 最新5則新聞
 正面 - 正面情緒新聞
 負面 - 負面情緒新聞
+一周 - 最近一周新聞分析
+[股票名稱] 一周 - 特定股票一周分析
 
-範例：查詢 台積電"""
+範例：
+查詢 台積電
+台積電 一周"""
     finally:
         loop.close()
     
@@ -420,6 +539,156 @@ async def get_sentiment_news_text(min_score, max_score):
     for row in rows:
         source_tag = f"[{row['source']}]"
         result += f"[{row['sentiment_score']}] {source_tag} {row['stock_name']}\n{row['title']}\n\n"
+    
+    return result
+
+async def get_weekly_analysis_text():
+    """取得一周新聞分析"""
+    pool = await get_db_pool()
+    async with pool.acquire() as conn:
+        week_ago = (datetime.now(ZoneInfo("Asia/Taipei")) - timedelta(days=7)).date()
+        
+        # 總新聞數
+        total_news = await conn.fetchval("""
+            SELECT COUNT(*) FROM (
+                SELECT id FROM yahoo_stock_news WHERE fetched_date >= $1
+                UNION ALL
+                SELECT id FROM cnyes_stock_news WHERE fetched_date >= $1
+            ) AS combined
+        """, week_ago)
+        
+        # 平均情緒
+        avg_sentiment = await conn.fetchval("""
+            SELECT AVG(sentiment_score) FROM (
+                SELECT sentiment_score FROM yahoo_stock_news 
+                WHERE sentiment_score IS NOT NULL AND fetched_date >= $1
+                UNION ALL
+                SELECT sentiment_score FROM cnyes_stock_news 
+                WHERE sentiment_score IS NOT NULL AND fetched_date >= $1
+            ) AS combined
+        """, week_ago)
+        
+        # TOP 5 股票
+        top_stocks = await conn.fetch("""
+            SELECT COALESCE(m.stock_name, combined.stock_id) as stock_name, SUM(news_count) as news_count
+            FROM (
+                SELECT stock_id, COUNT(*) as news_count FROM yahoo_stock_news WHERE fetched_date >= $1 GROUP BY stock_id
+                UNION ALL
+                SELECT stock_id, COUNT(*) as news_count FROM cnyes_stock_news WHERE fetched_date >= $1 GROUP BY stock_id
+            ) AS combined
+            LEFT JOIN stock_mapping m ON combined.stock_id = m.stock_id
+            GROUP BY combined.stock_id, m.stock_name
+            ORDER BY news_count DESC
+            LIMIT 5
+        """, week_ago)
+        
+        # 正負面新聞
+        positive_count = await conn.fetchval("""
+            SELECT COUNT(*) FROM (
+                SELECT id FROM yahoo_stock_news WHERE sentiment_score >= 7 AND fetched_date >= $1
+                UNION ALL
+                SELECT id FROM cnyes_stock_news WHERE sentiment_score >= 7 AND fetched_date >= $1
+            ) AS combined
+        """, week_ago)
+        
+        negative_count = await conn.fetchval("""
+            SELECT COUNT(*) FROM (
+                SELECT id FROM yahoo_stock_news WHERE sentiment_score <= 3 AND fetched_date >= $1
+                UNION ALL
+                SELECT id FROM cnyes_stock_news WHERE sentiment_score <= 3 AND fetched_date >= $1
+            ) AS combined
+        """, week_ago)
+        
+    await pool.close()
+    
+    sentiment_emoji = "📈" if avg_sentiment and avg_sentiment >= 6 else "📉" if avg_sentiment and avg_sentiment <= 4 else "➡️"
+    
+    result = f"""📊 最近一周新聞分析
+
+📰 總新聞數：{total_news} 則
+{sentiment_emoji} 平均情緒：{round(avg_sentiment, 2) if avg_sentiment else 'N/A'}
+📈 正面新聞：{positive_count} 則
+📉 負面新聞：{negative_count} 則
+
+🔥 本周最熱門股票：
+"""
+    
+    for i, row in enumerate(top_stocks, 1):
+        result += f"{i}. {row['stock_name']} ({row['news_count']} 則)\n"
+    
+    return result
+
+async def get_stock_weekly_analysis_text(stock_name):
+    """取得特定股票的一周新聞分析"""
+    pool = await get_db_pool()
+    async with pool.acquire() as conn:
+        week_ago = (datetime.now(ZoneInfo("Asia/Taipei")) - timedelta(days=7)).date()
+        today = datetime.now(ZoneInfo("Asia/Taipei")).date()
+        
+        # 格式化日期範圍
+        week_ago_str = week_ago.strftime('%m/%d')
+        yesterday_str = (today - timedelta(days=1)).strftime('%m/%d')
+        
+        # 查詢該股票的一周新聞
+        news_rows = await conn.fetch("""
+            SELECT title, sentiment_score, published_text, publisher, source, fetched_at
+            FROM (
+                SELECT n.title, n.sentiment_score, n.published_text, n.publisher, 'Yahoo' as source, n.fetched_at
+                FROM yahoo_stock_news n
+                LEFT JOIN stock_mapping m ON n.stock_id = m.stock_id
+                WHERE (m.stock_name LIKE $1 OR n.stock_id LIKE $1)
+                  AND n.fetched_date >= $2
+                UNION ALL
+                SELECT n.title, n.sentiment_score, 
+                       TO_CHAR(n.published_at, 'YYYY年MM月DD日 HH24:MI') as published_text,
+                       n.category_name as publisher, '鉅亨網' as source, n.fetched_at
+                FROM cnyes_stock_news n
+                LEFT JOIN stock_mapping m ON n.stock_id = m.stock_id
+                WHERE (m.stock_name LIKE $1 OR n.stock_id LIKE $1)
+                  AND n.fetched_date >= $2
+            ) AS combined
+            ORDER BY fetched_at DESC
+        """, f'%{stock_name}%', week_ago)
+        
+        if not news_rows:
+            await pool.close()
+            return f"找不到「{stock_name}」在最近一周的新聞資料"
+        
+        # 統計資料
+        total_news = len(news_rows)
+        
+        # 計算平均情緒
+        sentiment_scores = [row['sentiment_score'] for row in news_rows if row['sentiment_score'] is not None]
+        avg_sentiment = sum(sentiment_scores) / len(sentiment_scores) if sentiment_scores else None
+        
+        # 正負面新聞數
+        positive_count = sum(1 for score in sentiment_scores if score >= 7)
+        negative_count = sum(1 for score in sentiment_scores if score <= 3)
+        
+    await pool.close()
+    
+    # 判斷整體情緒
+    sentiment_emoji = "📈" if avg_sentiment and avg_sentiment >= 6 else "📉" if avg_sentiment and avg_sentiment <= 4 else "➡️"
+    sentiment_desc = "偏正面" if avg_sentiment and avg_sentiment >= 6 else "偏負面" if avg_sentiment and avg_sentiment <= 4 else "中性"
+    
+    # 組合回覆訊息
+    result = f"""📊 {stock_name} 一周新聞分析
+📅 時間範圍：{week_ago_str} - {yesterday_str}
+
+📰 總新聞數：{total_news} 則
+{sentiment_emoji} 平均情緒：{round(avg_sentiment, 2) if avg_sentiment else 'N/A'} ({sentiment_desc})
+📈 正面新聞：{positive_count} 則
+📉 負面新聞：{negative_count} 則
+
+📝 最新 5 則新聞：
+"""
+    
+    # 添加最新5則新聞
+    for i, row in enumerate(news_rows[:5], 1):
+        emoji = "📈" if row['sentiment_score'] and row['sentiment_score'] >= 7 else "📉" if row['sentiment_score'] and row['sentiment_score'] <= 3 else "➡️"
+        score = f"[{row['sentiment_score']}]" if row['sentiment_score'] else "[N/A]"
+        source_tag = f"[{row['source']}]"
+        result += f"\n{i}. {emoji} {score} {source_tag}\n   {row['title']}\n"
     
     return result
 

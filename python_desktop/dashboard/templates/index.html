@@ -215,6 +215,43 @@
             </div>
         </div>
 
+        <div class="news-section" style="margin-bottom: 30px;">
+            <h3 class="chart-title">📅 本周新聞分析 (最近7天)</h3>
+            <div class="stats-grid" style="margin-top: 20px;">
+                <div class="stat-card"
+                    style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
+                    <div class="stat-label" style="color: rgba(255,255,255,0.9);">本周總新聞</div>
+                    <div class="stat-value" style="color: white;" id="weeklyTotalNews">-</div>
+                </div>
+                <div class="stat-card"
+                    style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); color: white;">
+                    <div class="stat-label" style="color: rgba(255,255,255,0.9);">平均情緒</div>
+                    <div class="stat-value" style="color: white;" id="weeklyAvgSentiment">-</div>
+                </div>
+                <div class="stat-card"
+                    style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); color: white;">
+                    <div class="stat-label" style="color: rgba(255,255,255,0.9);">正面新聞</div>
+                    <div class="stat-value" style="color: white;" id="weeklyPositive">-</div>
+                </div>
+                <div class="stat-card"
+                    style="background: linear-gradient(135deg, #fa709a 0%, #fee140 100%); color: white;">
+                    <div class="stat-label" style="color: rgba(255,255,255,0.9);">負面新聞</div>
+                    <div class="stat-value" style="color: white;" id="weeklyNegative">-</div>
+                </div>
+            </div>
+            <div style="margin-top: 20px;">
+                <h4 style="color: #666; font-size: 1.1em; margin-bottom: 15px;">🔥 本周最熱門股票 TOP 5</h4>
+                <div id="weeklyTopStocks" style="color: #666;">載入中...</div>
+            </div>
+        </div>
+
+        <div class="chart-card" style="margin-bottom: 30px;">
+            <h3 class="chart-title">📈 一周情緒趨勢</h3>
+            <div class="chart-container">
+                <canvas id="weeklySentimentChart"></canvas>
+            </div>
+        </div>
+
         <div class="charts-grid">
             <div class="chart-card">
                 <h3 class="chart-title">情緒分數分布</h3>
@@ -244,7 +281,7 @@
     </div>
 
     <script>
-        let sentimentChart, topStocksChart, dailyTrendChart;
+        let sentimentChart, topStocksChart, dailyTrendChart, weeklySentimentChart;
 
         function updateTime() {
             const now = new Date();
@@ -377,6 +414,76 @@
             }
         }
 
+        async function fetchWeeklyAnalysis() {
+            try {
+                const response = await fetch('/api/weekly_analysis');
+                const data = await response.json();
+
+                document.getElementById('weeklyTotalNews').textContent = data.total_news.toLocaleString();
+                document.getElementById('weeklyAvgSentiment').textContent = data.avg_sentiment || 'N/A';
+                document.getElementById('weeklyPositive').textContent = data.positive_count.toLocaleString();
+                document.getElementById('weeklyNegative').textContent = data.negative_count.toLocaleString();
+
+                const weeklyTopStocks = document.getElementById('weeklyTopStocks');
+                if (data.top_stocks && data.top_stocks.length > 0) {
+                    weeklyTopStocks.innerHTML = data.top_stocks.map((stock, i) =>
+                        `<div style="padding: 8px 0; border-bottom: 1px solid #eee;">
+                            ${i + 1}. <strong>${stock.stock_name}</strong> - ${stock.news_count} 則新聞
+                        </div>`
+                    ).join('');
+                } else {
+                    weeklyTopStocks.innerHTML = '<div style="padding: 8px 0;">暫無資料</div>';
+                }
+            } catch (e) {
+                console.error("fetchWeeklyAnalysis error", e);
+            }
+        }
+
+        async function fetchWeeklySentimentTrend() {
+            try {
+                const response = await fetch('/api/weekly_sentiment_trend');
+                const data = await response.json();
+
+                const ctx = document.getElementById('weeklySentimentChart').getContext('2d');
+
+                if (weeklySentimentChart) weeklySentimentChart.destroy();
+
+                weeklySentimentChart = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: data.labels,
+                        datasets: [{
+                            label: '平均情緒分數',
+                            data: data.data,
+                            backgroundColor: 'rgba(245, 158, 11, 0.2)',
+                            borderColor: 'rgba(245, 158, 11, 1)',
+                            borderWidth: 3,
+                            fill: true,
+                            tension: 0.4,
+                            pointRadius: 5,
+                            pointBackgroundColor: 'rgba(245, 158, 11, 1)'
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                min: 0,
+                                max: 9,
+                                ticks: {
+                                    stepSize: 1
+                                }
+                            }
+                        }
+                    }
+                });
+            } catch (e) {
+                console.error("fetchWeeklySentimentTrend error", e);
+            }
+        }
+
         async function fetchRecentNews() {
             try {
                 const response = await fetch('/api/recent_news');
@@ -419,7 +526,9 @@
                 fetchSentimentDistribution(),
                 fetchTopStocks(),
                 fetchDailyTrend(),
-                fetchRecentNews()
+                fetchRecentNews(),
+                fetchWeeklyAnalysis(),
+                fetchWeeklySentimentTrend()
             ]);
         }
 
