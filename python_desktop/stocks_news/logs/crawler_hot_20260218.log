@@ -1,0 +1,65 @@
+============================================ 
+[2026/02/18 週三 15:01:18.97] Hot crawlers starting 
+============================================ 
+[2026/02/18 週三 15:01:18.99] Running nstock hot... 
+d:\__mypostgres_test\python_desktop\stocks_news\nstock\crawler_hot.py:266: DeprecationWarning: 'asyncio.WindowsSelectorEventLoopPolicy' is deprecated and slated for removal in Python 3.16
+  asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+d:\__mypostgres_test\python_desktop\stocks_news\nstock\crawler_hot.py:266: DeprecationWarning: 'asyncio.set_event_loop_policy' is deprecated and slated for removal in Python 3.16
+  asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
+============================================================
+NStock 股市新聞爬蟲 - 熱門股
+============================================================
+
+[INFO] 讀取股票清單: 974 支股票
+
+[INFO] 已處理: 0 支
+[INFO] 待處理: 974 支
+
+[OK] 資料庫連線成功
+
+[1/974] 處理 1449...
+  [-] 1449: 無符合條件的新聞
+[2/974] 處理 6642...
+  [-] 6642: 無符合條件的新聞
+[3/974] 處理 2897...
+  [-] 2897: 無符合條件的新聞
+[4/974] 處理 1220...
+  [-] 1220: 無符合條件的新聞
+[5/974] 處理 2527...
+  [-] 2527: 無符合條件的新聞
+[6/974] 處理 8284...
+  [-] 8284: 無符合條件的新聞
+[7/974] 處理 6530...
+  [-] 6530: 無符合條件的新聞
+[8/974] 處理 1617...
+  [-] 1617: 無符合條件的新聞
+[9/974] 處理 4976...
+  [-] 4976: 無符合條件的新聞
+Traceback (most recent call last):
+  File "C:\Users\brian\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\runners.py", line 127, in run
+    return self._loop.run_until_complete(task)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "C:\Users\brian\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\base_events.py", line 719, in run_until_complete
+    return future.result()
+           ~~~~~~~~~~~~~^^
+  File "d:\__mypostgres_test\python_desktop\stocks_news\nstock\crawler_hot.py", line 325, in main
+    await asyncio.sleep(delay)
+  File "C:\Users\brian\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py", line 702, in sleep
+    return await future
+           ^^^^^^^^^^^^
+asyncio.exceptions.CancelledError
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "d:\__mypostgres_test\python_desktop\stocks_news\nstock\crawler_hot.py", line 342, in <module>
+    asyncio.run(main())
+    ~~~~~~~~~~~^^^^^^^^
+  File "C:\Users\brian\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\runners.py", line 204, in run
+    return runner.run(main)
+           ~~~~~~~~~~^^^^^^
+  File "C:\Users\brian\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\runners.py", line 132, in run
+    raise KeyboardInterrupt()
+KeyboardInterrupt
+^C

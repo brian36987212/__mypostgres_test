@@ -169,6 +169,17 @@
             margin-bottom: 5px;
         }
 
+        .news-title a {
+            color: #333;
+            text-decoration: none;
+            transition: color 0.2s;
+        }
+
+        .news-title a:hover {
+            color: #667eea;
+            text-decoration: underline;
+        }
+
         .news-meta {
             font-size: 0.85em;
             color: #666;
@@ -507,8 +518,13 @@
                                 <span class="stock-badge">${news.stock_name}</span>
                                 ${news.sentiment_score ? `<span class="sentiment-badge ${sentimentClass}">${news.sentiment_score}</span>` : ''}
                             </div>
-                            <div class="news-title">${news.title}</div>
+                            <div class="news-title">
+                                <a href="${news.url}" target="_blank" style="color: #333; text-decoration: none;">
+                                    ${news.title}
+                                </a>
+                            </div>
                             <div class="news-meta">
+                                <span style="background: #e3e3e3; padding: 2px 8px; border-radius: 10px; margin-right: 8px; font-size: 0.8em;">${news.source}</span>
                                 ${news.publisher || '未知來源'} | ${news.published_text || '未知時間'}
                             </div>
                         </div>
