@@ -15,7 +15,10 @@ if %WAIT_COUNT% GEQ 24 (
 timeout /t 5 /nobreak >nul
 goto WAIT_NETWORK
 :NETWORK_OK
-set NVIDIA_API_KEY=***REMOVED***
+REM 從 .env 讀取環境變數（跳過 # 註解和空行）
+for /f "usebackq eol=# tokens=1,* delims==" %%A in ("d:\__mypostgres_test\python_desktop\.env") do (
+    set "%%A=%%B"
+)
 REM ============================================
 REM  全部爬蟲 (mid + lower + rare) - 每天跑一次
 REM ============================================
