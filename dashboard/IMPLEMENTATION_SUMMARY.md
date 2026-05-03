@@ -301,3 +301,112 @@ python test_weekly_api.py
 **最後更新：** 2026-02-09 14:00
 **開發者：** Antigravity AI
 **版本：** v1.0.0
+
+---
+
+# 系統設定與除錯記錄 — 2026-05-03
+
+## 🔧 本次修改總覽
+
+---
+
+### 1. `dashboard/app.py` — LINE Bot handler 條件判斷
+
+**問題：** `LINE_CHANNEL_SECRET` 未設定時，`handler = None`，但 `@handler.add(...)` 在模組載入時直接拋出 `AttributeError`，Dashboard 無法啟動。
+
+**修法：** 將 `handle_message` 包進 `_register_line_handlers()` 函式，並用 `if handler:` 條件呼叫，未設定 LINE 金鑰時 Dashboard 仍可正常啟動。
+
+---
+
+### 2. `dashboard/.env` — 建立環境變數檔
+
+**問題：** 檔案不存在，LINE Bot 金鑰讀不到。
+
+**修法：** 建立 `dashboard/.env`，格式如下：
+```
+LINE_CHANNEL_SECRET=
+LINE_CHANNEL_ACCESS_TOKEN=
+```
+
+---
+
+### 3. `stocks_news/run_crawlers_hot.bat` + `run_crawlers_daily.bat` — 路徑更新
+
+**問題：** 批次檔內硬編碼舊路徑 `d:\__mypostgres_test\python_desktop\`。
+
+**修法：** 全部更新為 `d:\StockPulse\`。
+
+---
+
+### 4. 7 個爬蟲腳本加入 `load_dotenv`
+
+**影響檔案：**
+- `stocks_news/cnyes/crawler_hot.py`
+- `stocks_news/cnyes/crawler_mid.py`
+- `stocks_news/cnyes/crawler_lower.py`
+- `stocks_news/cnyes/crawler_rare.py`
+- `stocks_news/cnyes/analyze_sentiment.py`
+- `stocks_news/yahoo/analyze_sentiment.py`
+- `stocks_news/nstock/analyze_sentiment.py`
+
+**問題：** 只用 `os.getenv()` 無法讀取 `.env` 檔，`NVIDIA_API_KEY = None`，導致 `AsyncOpenAI` 初始化失敗。
+
+**修法：**
+```python
+from dotenv import load_dotenv
+load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), "../../.env"), encoding="utf-8-sig")
+```
+
+> **注意：** 加入 `encoding="utf-8-sig"` 是因為 Windows 儲存 `.env` 時可能使用 UTF-16，需用 PowerShell 轉換：
+> ```powershell
+> [System.IO.File]::WriteAllText("d:\StockPulse\.env", (Get-Content "d:\StockPulse\.env" -Encoding Unicode -Raw), [System.Text.UTF8Encoding]::new($false))
+> ```
+
+---
+
+### 5. 3 個 `analyze_sentiment.py` — 429 速率限制處理
+
+**影響檔案：** cnyes / yahoo / nstock 的 `analyze_sentiment.py`
+
+**問題：** NVIDIA NIM 免費帳號速率嚴格，並發 2 + 延遲 0.5 秒導致大量 429，直接 skip 無重試。
+
+**修法：**
+
+| 參數 | 改前 | 改後 |
+|------|------|------|
+| `MAX_CONCURRENCY` | 2 | 1 |
+| 請求間延遲 | 0.5~1.5 秒 | 15~20 秒 |
+| 429 重試 | 無 | 指數退避，最多 4 次（等待 10→20→40 秒） |
+
+---
+
+### 6. 3 個 `analyze_sentiment.py` — 資料範圍限制
+
+**修法：** 設定 `DAYS_LIMIT = 3`，只對最近 3 天的新聞進行情緒分析，避免處理大量舊資料。
+
+---
+
+### 7. 清除 3 天前舊資料（手動 SQL）
+
+```sql
+DELETE FROM public.cnyes_stock_news  WHERE published_at < NOW() - INTERVAL '3 days';
+DELETE FROM public.yahoo_stock_news  WHERE published_at < NOW() - INTERVAL '3 days';
+DELETE FROM public.nstock_stock_news WHERE published_at < NOW() - INTERVAL '3 days';
+```
+
+---
+
+## 📁 目前專案路徑
+
+| 元件 | 路徑 |
+|------|------|
+| Dashboard | `d:\StockPulse\dashboard\` |
+| 環境變數（共用） | `d:\StockPulse\.env` |
+| 環境變數（Dashboard） | `d:\StockPulse\dashboard\.env` |
+| 爬蟲（熱門排程） | `d:\StockPulse\stocks_news\run_crawlers_hot.bat` |
+| 爬蟲（每日排程） | `d:\StockPulse\stocks_news\run_crawlers_daily.bat` |
+
+---
+
+**更新時間：** 2026-05-03
+**版本：** v1.1.0

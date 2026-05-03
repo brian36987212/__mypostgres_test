@@ -2,6 +2,8 @@ import asyncio
 import json
 import re
 import os
+from dotenv import load_dotenv
+load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), "../../.env"), encoding="utf-8-sig")
 import random
 import time
 from datetime import datetime

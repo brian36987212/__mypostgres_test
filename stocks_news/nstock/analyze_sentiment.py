@@ -1,6 +1,8 @@
 import asyncio
 import re
 import os
+from dotenv import load_dotenv
+load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), "../../.env"))
 import time
 import random
 from datetime import datetime, timedelta
@@ -12,9 +14,9 @@ from openai import AsyncOpenAI
 # ================= 配置 =================
 PG_DSN = "postgresql://postgres:lab529@localhost:5432/postgres"
 NVIDIA_API_KEY = os.getenv("NVIDIA_API_KEY")
-MAX_CONCURRENCY = 2
+MAX_CONCURRENCY = 2  # API 並發數 (1 避免 429)
 BATCH_SIZE = None
-DAYS_LIMIT = None
+DAYS_LIMIT = 3  # 只分析 3 天內的新聞
 
 UPDATE_SENTIMENT_SQL = """
 UPDATE public.nstock_stock_news
@@ -67,7 +69,7 @@ async def analyze_and_update_sentiment(sem: asyncio.Semaphore, client: AsyncOpen
         
         text = content if content else title
         
-        await asyncio.sleep(random.uniform(0.5, 1.5))
+        await asyncio.sleep(random.uniform(15.0, 20.0))
         
         sentiment_score = await get_nvidia_sentiment_score_async(client, text)
         

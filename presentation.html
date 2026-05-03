@@ -1,0 +1,859 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>StockPulse 專案簡報</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700;900&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:       #0a0e1a;
+      --surface:  #111827;
+      --card:     #1a2235;
+      --border:   #1e2d45;
+      --accent1:  #3b82f6;
+      --accent2:  #8b5cf6;
+      --accent3:  #06b6d4;
+      --green:    #10b981;
+      --red:      #ef4444;
+      --yellow:   #f59e0b;
+      --text:     #e2e8f0;
+      --muted:    #64748b;
+    }
+
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Noto Sans TC', sans-serif;
+      overflow: hidden;
+    }
+
+    /* ── Slideshow container ── */
+    .deck {
+      width: 100vw;
+      height: 100vh;
+      position: relative;
+    }
+
+    .slide {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 48px 64px;
+      opacity: 0;
+      pointer-events: none;
+      transform: translateX(60px);
+      transition: opacity .5s ease, transform .5s ease;
+    }
+    .slide.active {
+      opacity: 1;
+      pointer-events: auto;
+      transform: translateX(0);
+    }
+    .slide.exit {
+      opacity: 0;
+      transform: translateX(-60px);
+    }
+
+    /* ── Navigation ── */
+    .nav {
+      position: fixed;
+      bottom: 32px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      z-index: 100;
+      background: rgba(17,24,39,.85);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--border);
+      border-radius: 50px;
+      padding: 10px 24px;
+    }
+    .nav button {
+      background: none;
+      border: none;
+      color: var(--text);
+      cursor: pointer;
+      font-size: 20px;
+      padding: 4px 8px;
+      border-radius: 8px;
+      transition: background .2s, color .2s;
+    }
+    .nav button:hover { background: var(--border); color: #fff; }
+    .nav button:disabled { color: var(--muted); cursor: default; }
+    .nav button:disabled:hover { background: none; }
+    .slide-counter {
+      font-size: 13px;
+      color: var(--muted);
+      min-width: 60px;
+      text-align: center;
+      font-variant-numeric: tabular-nums;
+    }
+    .dots {
+      display: flex;
+      gap: 6px;
+    }
+    .dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: var(--muted);
+      cursor: pointer;
+      transition: background .2s, transform .2s;
+    }
+    .dot.active { background: var(--accent1); transform: scale(1.4); }
+
+    /* ── Progress bar ── */
+    .progress {
+      position: fixed;
+      top: 0; left: 0;
+      height: 3px;
+      background: linear-gradient(90deg, var(--accent1), var(--accent2));
+      transition: width .4s ease;
+      z-index: 200;
+      border-radius: 0 2px 2px 0;
+    }
+
+    /* ── Slide number badge ── */
+    .slide-badge {
+      position: fixed;
+      top: 20px; right: 28px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      color: var(--muted);
+      z-index: 100;
+    }
+
+    /* ══════════════════════════
+       SLIDE-SPECIFIC STYLES
+    ══════════════════════════ */
+
+    /* ── Title slide ── */
+    .title-slide {
+      background:
+        radial-gradient(ellipse 80% 60% at 50% 0%, rgba(59,130,246,.18) 0%, transparent 70%),
+        radial-gradient(ellipse 50% 40% at 10% 100%, rgba(139,92,246,.12) 0%, transparent 60%),
+        var(--bg);
+      text-align: center;
+    }
+    .title-slide .logo-row {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      margin-bottom: 28px;
+      justify-content: center;
+    }
+    .logo-icon {
+      width: 56px; height: 56px;
+      border-radius: 16px;
+      background: linear-gradient(135deg, var(--accent1), var(--accent2));
+      display: flex; align-items: center; justify-content: center;
+      font-size: 28px;
+      box-shadow: 0 0 40px rgba(59,130,246,.4);
+    }
+    .title-slide h1 {
+      font-size: clamp(42px, 6vw, 72px);
+      font-weight: 900;
+      background: linear-gradient(135deg, #fff 30%, var(--accent1));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      line-height: 1.1;
+      letter-spacing: -1px;
+    }
+    .title-slide .subtitle {
+      font-size: 18px;
+      color: var(--muted);
+      margin-top: 12px;
+    }
+    .title-slide .tag-row {
+      display: flex;
+      gap: 10px;
+      justify-content: center;
+      margin-top: 36px;
+      flex-wrap: wrap;
+    }
+    .tag {
+      padding: 6px 16px;
+      border-radius: 50px;
+      font-size: 13px;
+      font-weight: 500;
+      border: 1px solid;
+    }
+    .tag-blue  { border-color: var(--accent1); color: var(--accent1); background: rgba(59,130,246,.1); }
+    .tag-purple { border-color: var(--accent2); color: var(--accent2); background: rgba(139,92,246,.1); }
+    .tag-cyan  { border-color: var(--accent3); color: var(--accent3); background: rgba(6,182,212,.1); }
+    .tag-green { border-color: var(--green);   color: var(--green);   background: rgba(16,185,129,.1); }
+
+    /* ── Slide heading ── */
+    .slide-heading {
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 4px;
+      text-transform: uppercase;
+      color: var(--accent1);
+      margin-bottom: 12px;
+      align-self: flex-start;
+    }
+    .slide-title {
+      font-size: clamp(28px, 4vw, 44px);
+      font-weight: 900;
+      margin-bottom: 36px;
+      align-self: flex-start;
+      line-height: 1.2;
+    }
+
+    /* ── Card grid ── */
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; width: 100%; }
+    .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; width: 100%; }
+    .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; width: 100%; }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 24px;
+      position: relative;
+      overflow: hidden;
+      transition: transform .2s, border-color .2s;
+    }
+    .card:hover { transform: translateY(-2px); border-color: var(--accent1); }
+    .card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 3px;
+      background: var(--card-accent, linear-gradient(90deg, var(--accent1), var(--accent2)));
+    }
+    .card-icon { font-size: 28px; margin-bottom: 12px; }
+    .card h3 { font-size: 15px; font-weight: 700; margin-bottom: 8px; }
+    .card p  { font-size: 13px; color: var(--muted); line-height: 1.6; }
+
+    /* ── Stat numbers ── */
+    .stat-num {
+      font-size: 36px;
+      font-weight: 900;
+      font-family: 'JetBrains Mono', monospace;
+      background: linear-gradient(135deg, var(--accent1), var(--accent3));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .stat-label { font-size: 12px; color: var(--muted); margin-top: 4px; }
+
+    /* ── Arch diagram ── */
+    .arch-flow {
+      display: flex;
+      align-items: center;
+      gap: 0;
+      width: 100%;
+      flex-wrap: nowrap;
+    }
+    .arch-box {
+      flex: 1;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px 12px;
+      text-align: center;
+      font-size: 13px;
+      font-weight: 600;
+    }
+    .arch-box .icon { font-size: 22px; display: block; margin-bottom: 6px; }
+    .arch-arrow {
+      color: var(--accent1);
+      font-size: 22px;
+      padding: 0 4px;
+      flex-shrink: 0;
+    }
+
+    /* ── Timeline / list ── */
+    .timeline { display: flex; flex-direction: column; gap: 14px; width: 100%; }
+    .tl-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 16px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px 20px;
+    }
+    .tl-dot {
+      width: 32px; height: 32px;
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 14px;
+      flex-shrink: 0;
+      margin-top: 1px;
+    }
+    .tl-dot.blue   { background: rgba(59,130,246,.2);  color: var(--accent1); }
+    .tl-dot.purple { background: rgba(139,92,246,.2);  color: var(--accent2); }
+    .tl-dot.cyan   { background: rgba(6,182,212,.2);   color: var(--accent3); }
+    .tl-dot.green  { background: rgba(16,185,129,.2);  color: var(--green); }
+    .tl-dot.yellow { background: rgba(245,158,11,.2);  color: var(--yellow); }
+    .tl-body h4 { font-size: 14px; font-weight: 700; margin-bottom: 4px; }
+    .tl-body p  { font-size: 12px; color: var(--muted); line-height: 1.5; }
+
+    /* ── Code snippet ── */
+    .code-block {
+      background: #060c18;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px 24px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12.5px;
+      line-height: 1.7;
+      width: 100%;
+      overflow: hidden;
+    }
+    .code-block .kw  { color: #818cf8; }
+    .code-block .fn  { color: #38bdf8; }
+    .code-block .str { color: #86efac; }
+    .code-block .cm  { color: #475569; }
+    .code-block .num { color: #fb923c; }
+
+    /* ── DB schema ── */
+    .db-table {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+      width: 100%;
+    }
+    .db-table .db-header {
+      background: linear-gradient(90deg, rgba(59,130,246,.2), rgba(139,92,246,.1));
+      padding: 10px 16px;
+      font-size: 13px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .db-row {
+      display: grid;
+      grid-template-columns: 140px 120px 1fr;
+      gap: 8px;
+      padding: 8px 16px;
+      border-top: 1px solid var(--border);
+      font-size: 12px;
+    }
+    .db-col { font-family: 'JetBrains Mono', monospace; color: var(--accent3); }
+    .db-type { color: var(--accent2); }
+    .db-desc { color: var(--muted); }
+
+    /* ── Tech badges ── */
+    .tech-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      width: 100%;
+    }
+    .tech-badge {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px 16px;
+      font-size: 13px;
+      font-weight: 500;
+      transition: border-color .2s;
+    }
+    .tech-badge:hover { border-color: var(--accent1); }
+    .tech-badge .ti { font-size: 18px; }
+
+    /* ── Two-col layout ── */
+    .two-col {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 28px;
+      width: 100%;
+      align-items: start;
+    }
+
+    /* ── Status pills ── */
+    .status-done { color: var(--green); }
+    .status-todo { color: var(--yellow); }
+
+    /* ── Roadmap ── */
+    .roadmap-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+      width: 100%;
+    }
+    .rm-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 18px 20px;
+    }
+    .rm-title { font-size: 14px; font-weight: 700; margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
+    .rm-list { list-style: none; }
+    .rm-list li { font-size: 12px; color: var(--muted); padding: 4px 0; border-bottom: 1px solid var(--border); }
+    .rm-list li:last-child { border-bottom: none; }
+    .rm-list li::before { content: "→ "; color: var(--accent1); }
+
+    /* ── Thank you slide ── */
+    .ty-slide {
+      text-align: center;
+      background:
+        radial-gradient(ellipse 70% 60% at 50% 50%, rgba(59,130,246,.12) 0%, transparent 70%),
+        var(--bg);
+    }
+    .ty-bg-text {
+      position: absolute;
+      font-size: 200px;
+      font-weight: 900;
+      color: rgba(255,255,255,.02);
+      user-select: none;
+      white-space: nowrap;
+    }
+    .ty-slide h2 {
+      font-size: clamp(36px, 5vw, 60px);
+      font-weight: 900;
+      background: linear-gradient(135deg, #fff 30%, var(--accent1));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    /* ── Pulse animation ── */
+    @keyframes pulse-ring {
+      0%   { box-shadow: 0 0 0 0 rgba(59,130,246,.4); }
+      70%  { box-shadow: 0 0 0 16px rgba(59,130,246,0); }
+      100% { box-shadow: 0 0 0 0 rgba(59,130,246,0); }
+    }
+    .pulse { animation: pulse-ring 2.5s ease infinite; }
+  </style>
+</head>
+<body>
+
+<div class="progress" id="progress"></div>
+<div class="slide-badge" id="slide-badge">01 / 09</div>
+
+<div class="deck" id="deck">
+
+  <!-- ═══ SLIDE 1: Title ═══ -->
+  <div class="slide title-slide active" data-idx="0">
+    <div class="logo-row">
+      <div class="logo-icon pulse">📈</div>
+    </div>
+    <h1>StockPulse</h1>
+    <p class="subtitle">股市新聞爬蟲 · 情緒分析 · 視覺化 Dashboard · LINE Bot</p>
+    <div class="tag-row">
+      <span class="tag tag-blue">Python</span>
+      <span class="tag tag-purple">PostgreSQL</span>
+      <span class="tag tag-cyan">Flask</span>
+      <span class="tag tag-green">NVIDIA NIM</span>
+      <span class="tag tag-blue">LINE Bot</span>
+    </div>
+    <p style="margin-top:48px; font-size:13px; color:var(--muted);">2026 · Brian</p>
+  </div>
+
+  <!-- ═══ SLIDE 2: 系統概覽 ═══ -->
+  <div class="slide" data-idx="1">
+    <div class="slide-heading">Overview</div>
+    <div class="slide-title">系統概覽</div>
+    <div class="arch-flow">
+      <div class="arch-box" style="--card-accent:var(--accent1)">
+        <span class="icon">🌐</span>
+        <div>新聞來源</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:4px;">Yahoo / 鉅亨 / NStock</div>
+      </div>
+      <div class="arch-arrow">→</div>
+      <div class="arch-box" style="--card-accent:var(--accent2)">
+        <span class="icon">🕷️</span>
+        <div>分級爬蟲</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:4px;">3 來源 × 4 級別</div>
+      </div>
+      <div class="arch-arrow">→</div>
+      <div class="arch-box" style="--card-accent:var(--accent3)">
+        <span class="icon">🧠</span>
+        <div>AI 情緒分析</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:4px;">NVIDIA NIM 1–9 分</div>
+      </div>
+      <div class="arch-arrow">→</div>
+      <div class="arch-box" style="--card-accent:var(--green)">
+        <span class="icon">🗄️</span>
+        <div>PostgreSQL</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:4px;">統一資料庫</div>
+      </div>
+      <div class="arch-arrow">→</div>
+      <div class="arch-box" style="--card-accent:var(--yellow)">
+        <span class="icon">📊</span>
+        <div>展示層</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:4px;">Dashboard + LINE</div>
+      </div>
+    </div>
+    <div class="grid-3" style="margin-top:24px;">
+      <div class="card" style="--card-accent:linear-gradient(90deg,var(--accent1),var(--accent2))">
+        <div class="stat-num">3</div>
+        <div class="stat-label">新聞來源（Yahoo / 鉅亨 / NStock）</div>
+      </div>
+      <div class="card" style="--card-accent:linear-gradient(90deg,var(--accent2),var(--accent3))">
+        <div class="stat-num">1,949</div>
+        <div class="stat-label">覆蓋股票數（4 個市值分級）</div>
+      </div>
+      <div class="card" style="--card-accent:linear-gradient(90deg,var(--accent3),var(--green))">
+        <div class="stat-num">2,978+</div>
+        <div class="stat-label">資料庫新聞筆數</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ SLIDE 3: 爬蟲架構 ═══ -->
+  <div class="slide" data-idx="2">
+    <div class="slide-heading">Crawlers</div>
+    <div class="slide-title">爬蟲架構</div>
+    <div class="two-col">
+      <div>
+        <div class="timeline">
+          <div class="tl-item">
+            <div class="tl-dot blue">①</div>
+            <div class="tl-body">
+              <h4>Phase 1 — 抓新聞列表</h4>
+              <p>curl_cffi 模擬真實瀏覽器 TLS 指紋，繞過反爬蟲<br>非同步並發 · 指數退避重試 · 斷點續爬</p>
+            </div>
+          </div>
+          <div class="tl-item">
+            <div class="tl-dot purple">②</div>
+            <div class="tl-body">
+              <h4>Phase 2 — 抓新聞內文</h4>
+              <p>fetch_content.py 補抓完整文章內容<br>失敗 URL 記錄，可重跑</p>
+            </div>
+          </div>
+          <div class="tl-item">
+            <div class="tl-dot green">③</div>
+            <div class="tl-body">
+              <h4>Phase 3 — AI 情緒分析</h4>
+              <p>NVIDIA NIM API（Llama 系列）<br>給每篇新聞打 1–9 分情緒評分</p>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div style="margin-bottom:14px; font-weight:700; font-size:14px; color:var(--muted)">股票分級策略</div>
+        <div class="timeline">
+          <div class="tl-item">
+            <div class="tl-dot blue">🔥</div>
+            <div class="tl-body"><h4>熱門股 — 974 支</h4><p>成交金額 ≥ 19,834 元 · 每日爬取 3 天內新聞</p></div>
+          </div>
+          <div class="tl-item">
+            <div class="tl-dot cyan">📊</div>
+            <div class="tl-body"><h4>中間股 — 487 支</h4><p>3,684 ~ 19,834 元 · 每日爬取 3 天內新聞</p></div>
+          </div>
+          <div class="tl-item">
+            <div class="tl-dot yellow">📉</div>
+            <div class="tl-body"><h4>偏下股 — 293 支</h4><p>927 ~ 3,684 元 · 每日爬取 7 天內新聞</p></div>
+          </div>
+          <div class="tl-item">
+            <div class="tl-dot purple">💤</div>
+            <div class="tl-body"><h4>稀少股 — 195 支</h4><p>0 ~ 927 元 · 每日爬取 7 天內新聞</p></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ SLIDE 4: 3 大新聞來源 ═══ -->
+  <div class="slide" data-idx="3">
+    <div class="slide-heading">Data Sources</div>
+    <div class="slide-title">三大新聞來源</div>
+    <div class="grid-3">
+      <div class="card" style="--card-accent:linear-gradient(90deg,#7c3aed,#a78bfa)">
+        <div class="card-icon">🟣</div>
+        <h3>Yahoo Finance</h3>
+        <p>crawler_hot / mid / lower / rare<br>fetch_content + analyze_sentiment<br><br><strong style="color:var(--accent1)">6 支腳本</strong></p>
+      </div>
+      <div class="card" style="--card-accent:linear-gradient(90deg,#0369a1,#38bdf8)">
+        <div class="card-icon">🔵</div>
+        <h3>鉅亨網 Cnyes</h3>
+        <p>crawler_hot / mid / lower / rare<br>fetch_content + analyze_sentiment<br><br><strong style="color:var(--accent3)">6 支腳本</strong></p>
+      </div>
+      <div class="card" style="--card-accent:linear-gradient(90deg,#065f46,#34d399)">
+        <div class="card-icon">🟢</div>
+        <h3>NStock</h3>
+        <p>crawler_hot / mid / lower / rare<br>fetch_content + analyze_sentiment<br><br><strong style="color:var(--green)">6 支腳本（+ 工具）</strong></p>
+      </div>
+    </div>
+    <div class="card" style="margin-top:20px; --card-accent:linear-gradient(90deg,var(--accent1),var(--accent2)); width:100%">
+      <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;">
+        <span style="font-size:24px;">⏰</span>
+        <div>
+          <div style="font-weight:700; margin-bottom:4px;">自動化排程 — run_crawlers_daily.bat</div>
+          <div style="font-size:13px;color:var(--muted);">開機等待網路連線 → 清除舊進度 → 依序跑 3 來源 × 3 Phase → 記錄日誌</div>
+        </div>
+        <div style="margin-left:auto; display:flex; gap:12px;">
+          <div class="tag tag-green">每日自動執行</div>
+          <div class="tag tag-blue">斷點續爬</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ SLIDE 5: 資料庫結構 ═══ -->
+  <div class="slide" data-idx="4">
+    <div class="slide-heading">Database</div>
+    <div class="slide-title">資料庫結構（PostgreSQL）</div>
+    <div class="two-col">
+      <div>
+        <div class="db-table">
+          <div class="db-header">🗄️ yahoo_stock_news / cnyes_stock_news / nstock_stock_news</div>
+          <div class="db-row"><span class="db-col">stock_id</span><span class="db-type">VARCHAR</span><span class="db-desc">股票代碼</span></div>
+          <div class="db-row"><span class="db-col">title</span><span class="db-type">TEXT</span><span class="db-desc">新聞標題</span></div>
+          <div class="db-row"><span class="db-col">link</span><span class="db-type">TEXT</span><span class="db-desc">原始網址</span></div>
+          <div class="db-row"><span class="db-col">publisher</span><span class="db-type">VARCHAR</span><span class="db-desc">發布媒體</span></div>
+          <div class="db-row"><span class="db-col">content</span><span class="db-type">TEXT</span><span class="db-desc">新聞內文</span></div>
+          <div class="db-row"><span class="db-col">sentiment_score</span><span class="db-type">INTEGER</span><span class="db-desc">情緒分數 1–9</span></div>
+          <div class="db-row"><span class="db-col">fetched_at</span><span class="db-type">TIMESTAMP</span><span class="db-desc">抓取時間</span></div>
+          <div class="db-row"><span class="db-col">fetched_date</span><span class="db-type">DATE</span><span class="db-desc">抓取日期（索引）</span></div>
+        </div>
+      </div>
+      <div>
+        <div class="db-table" style="margin-bottom:16px">
+          <div class="db-header">📋 stock_mapping</div>
+          <div class="db-row"><span class="db-col">stock_id</span><span class="db-type">VARCHAR PK</span><span class="db-desc">股票代碼</span></div>
+          <div class="db-row"><span class="db-col">stock_name</span><span class="db-type">VARCHAR</span><span class="db-desc">股票中文名稱</span></div>
+        </div>
+        <div class="card" style="--card-accent:linear-gradient(90deg,var(--green),var(--accent3))">
+          <div class="card-icon">🔗</div>
+          <h3>跨源合併查詢</h3>
+          <p>Dashboard 用 <strong>UNION ALL</strong> 合併所有來源<br>DISTINCT ON 去重，避免同篇新聞重複顯示</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ SLIDE 6: Dashboard ═══ -->
+  <div class="slide" data-idx="5">
+    <div class="slide-heading">Frontend</div>
+    <div class="slide-title">Dashboard 功能</div>
+    <div class="grid-4" style="margin-bottom:20px">
+      <div class="card" style="--card-accent:linear-gradient(90deg,#7c3aed,#a78bfa)">
+        <div class="card-icon">📰</div>
+        <h3>本週總新聞</h3>
+        <div class="stat-num" style="font-size:28px">2,472</div>
+      </div>
+      <div class="card" style="--card-accent:linear-gradient(90deg,#ec4899,#f97316)">
+        <div class="card-icon">🎯</div>
+        <h3>平均情緒</h3>
+        <div class="stat-num" style="font-size:28px">6.09</div>
+      </div>
+      <div class="card" style="--card-accent:linear-gradient(90deg,#0369a1,#38bdf8)">
+        <div class="card-icon">📈</div>
+        <h3>正面新聞</h3>
+        <div class="stat-num" style="font-size:28px">913</div>
+      </div>
+      <div class="card" style="--card-accent:linear-gradient(90deg,#b45309,#f59e0b)">
+        <div class="card-icon">📉</div>
+        <h3>負面新聞</h3>
+        <div class="stat-num" style="font-size:28px">130</div>
+      </div>
+    </div>
+    <div class="grid-3">
+      <div class="card" style="--card-accent:linear-gradient(90deg,var(--accent1),var(--accent2))">
+        <div class="card-icon">🔥</div>
+        <h3>TOP 5 熱門股</h3>
+        <p style="margin-top:8px;">
+          1. 華邦電 (23 則)<br>
+          2. 旺宏 (22 則)<br>
+          3. 力積電 (21 則)<br>
+          4. 台積電 (21 則)<br>
+          5. 聯電 (21 則)
+        </p>
+      </div>
+      <div class="card" style="--card-accent:linear-gradient(90deg,var(--accent3),var(--green))">
+        <div class="card-icon">📊</div>
+        <h3>情緒趨勢折線圖</h3>
+        <p>過去 7 天每日平均情緒<br>Chart.js · 橙色主題<br><br>趨勢：5.58 → <strong style="color:var(--green)">6.60 📈</strong></p>
+      </div>
+      <div class="card" style="--card-accent:linear-gradient(90deg,var(--green),#065f46)">
+        <div class="card-icon">⚡</div>
+        <h3>即時更新</h3>
+        <p>每 30 秒自動刷新<br>最新 20 則新聞串流<br>近 30 天趨勢圖</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ SLIDE 7: LINE Bot ═══ -->
+  <div class="slide" data-idx="6">
+    <div class="slide-heading">LINE Bot</div>
+    <div class="slide-title">LINE Bot 指令</div>
+    <div class="two-col">
+      <div class="timeline">
+        <div class="tl-item">
+          <div class="tl-dot blue">🔍</div>
+          <div class="tl-body"><h4>查詢 [股票名稱]</h4><p>查詢特定股票最新新聞</p></div>
+        </div>
+        <div class="tl-item">
+          <div class="tl-dot yellow">🔥</div>
+          <div class="tl-body"><h4>熱門</h4><p>最活躍 10 檔股票排行</p></div>
+        </div>
+        <div class="tl-item">
+          <div class="tl-dot cyan">🆕</div>
+          <div class="tl-body"><h4>最新</h4><p>最新 5 則新聞</p></div>
+        </div>
+        <div class="tl-item">
+          <div class="tl-dot green">📈</div>
+          <div class="tl-body"><h4>正面 / 負面</h4><p>依情緒分數過濾（7-9 / 1-3）</p></div>
+        </div>
+        <div class="tl-item">
+          <div class="tl-dot purple">📊</div>
+          <div class="tl-body"><h4>一周 / 本周</h4><p>最近 7 天新聞分析摘要</p></div>
+        </div>
+      </div>
+      <div class="card" style="--card-accent:linear-gradient(90deg,#05a46c,#10b981); height:fit-content">
+        <div class="card-icon">📱</div>
+        <h3>本周回應範例</h3>
+        <div class="code-block" style="margin-top:12px; padding:14px 16px; font-size:11.5px;">
+📊 最近一周新聞分析<br><br>
+📰 總新聞數：<span class="num">2472</span> 則<br>
+📈 平均情緒：<span class="num">6.09</span><br>
+📈 正面新聞：<span class="num">913</span> 則<br>
+📉 負面新聞：<span class="num">130</span> 則<br><br>
+🔥 本周最熱門股票：<br>
+1. 華邦電 (<span class="num">23</span> 則)<br>
+2. 旺宏 (<span class="num">22</span> 則)<br>
+3. 台積電 (<span class="num">21</span> 則)
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ SLIDE 8: 技術棧 ═══ -->
+  <div class="slide" data-idx="7">
+    <div class="slide-heading">Tech Stack</div>
+    <div class="slide-title">技術棧</div>
+    <div class="two-col">
+      <div>
+        <div style="font-size:13px; color:var(--muted); font-weight:700; margin-bottom:12px; letter-spacing:2px; text-transform:uppercase;">爬蟲 / 後端</div>
+        <div class="tech-grid">
+          <div class="tech-badge"><span class="ti">🐍</span> Python 3.10+</div>
+          <div class="tech-badge"><span class="ti">🌐</span> curl_cffi</div>
+          <div class="tech-badge"><span class="ti">🍲</span> BeautifulSoup4</div>
+          <div class="tech-badge"><span class="ti">⚡</span> asyncio / asyncpg</div>
+          <div class="tech-badge"><span class="ti">🧠</span> NVIDIA NIM API</div>
+          <div class="tech-badge"><span class="ti">🤖</span> OpenAI SDK</div>
+          <div class="tech-badge"><span class="ti">🌶️</span> Flask</div>
+          <div class="tech-badge"><span class="ti">🐘</span> PostgreSQL</div>
+        </div>
+      </div>
+      <div>
+        <div style="font-size:13px; color:var(--muted); font-weight:700; margin-bottom:12px; letter-spacing:2px; text-transform:uppercase;">前端 / 整合</div>
+        <div class="tech-grid">
+          <div class="tech-badge"><span class="ti">📊</span> Chart.js v4.4</div>
+          <div class="tech-badge"><span class="ti">💻</span> Vanilla JS + CSS3</div>
+          <div class="tech-badge"><span class="ti">💬</span> LINE Bot SDK</div>
+          <div class="tech-badge"><span class="ti">🔗</span> ngrok (Webhook)</div>
+          <div class="tech-badge"><span class="ti">🔐</span> python-dotenv</div>
+          <div class="tech-badge"><span class="ti">📋</span> Windows Task Scheduler</div>
+        </div>
+        <div class="card" style="margin-top:16px; --card-accent:linear-gradient(90deg,var(--accent2),var(--accent1))">
+          <div style="font-weight:700; margin-bottom:8px; font-size:14px;">🔒 安全性</div>
+          <p>API Keys 改用 .env 環境變數<br>git filter-repo 清除歷史洩漏記錄<br>.gitignore 防止再次 commit</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ SLIDE 9: 未來規劃 ═══ -->
+  <div class="slide ty-slide" data-idx="8">
+    <div class="ty-bg-text">NEXT</div>
+    <div class="slide-heading" style="align-self:auto; margin-bottom:20px;">Roadmap</div>
+    <div class="roadmap-grid" style="max-width:800px; margin-bottom:32px;">
+      <div class="rm-card">
+        <div class="rm-title"><span>🔥</span> 短期優化</div>
+        <ul class="rm-list">
+          <li>週對比功能（本周 vs 上周）</li>
+          <li>行業分類分析</li>
+          <li>移動端 Dashboard 優化</li>
+          <li>LINE Bot 圖片回覆</li>
+        </ul>
+      </div>
+      <div class="rm-card">
+        <div class="rm-title"><span>🚀</span> 長期擴展</div>
+        <ul class="rm-list">
+          <li>自訂時間範圍查詢（3/14/30 天）</li>
+          <li>情緒異常波動預警通知</li>
+          <li>匯出 PDF 報告</li>
+          <li>郵件訂閱功能</li>
+        </ul>
+      </div>
+    </div>
+    <h2>謝謝觀看 🎉</h2>
+    <p style="color:var(--muted); margin-top:12px; font-size:15px;">StockPulse · 2026</p>
+  </div>
+
+</div>
+
+<!-- ── Navigation ── -->
+<div class="nav">
+  <button id="btn-prev" title="上一頁 (←)" disabled>◀</button>
+  <div class="dots" id="dots"></div>
+  <div class="slide-counter" id="counter">1 / 9</div>
+  <button id="btn-next" title="下一頁 (→)">▶</button>
+</div>
+
+<script>
+  const slides = Array.from(document.querySelectorAll('.slide'));
+  const total  = slides.length;
+  let cur = 0;
+
+  const progress = document.getElementById('progress');
+  const badge    = document.getElementById('slide-badge');
+  const counter  = document.getElementById('counter');
+  const btnPrev  = document.getElementById('btn-prev');
+  const btnNext  = document.getElementById('btn-next');
+  const dotsEl   = document.getElementById('dots');
+
+  // Build dots
+  slides.forEach((_, i) => {
+    const d = document.createElement('div');
+    d.className = 'dot' + (i === 0 ? ' active' : '');
+    d.addEventListener('click', () => goTo(i));
+    dotsEl.appendChild(d);
+  });
+
+  function goTo(next) {
+    if (next < 0 || next >= total || next === cur) return;
+
+    slides[cur].classList.remove('active');
+    slides[cur].classList.add('exit');
+    setTimeout(() => slides[cur].classList.remove('exit'), 500);
+
+    cur = next;
+    slides[cur].classList.add('active');
+
+    // update UI
+    const pct = ((cur + 1) / total) * 100;
+    progress.style.width = pct + '%';
+    badge.textContent = String(cur + 1).padStart(2, '0') + ' / ' + String(total).padStart(2, '0');
+    counter.textContent = (cur + 1) + ' / ' + total;
+    btnPrev.disabled = cur === 0;
+    btnNext.disabled = cur === total - 1;
+    dotsEl.querySelectorAll('.dot').forEach((d, i) => d.classList.toggle('active', i === cur));
+  }
+
+  btnPrev.addEventListener('click', () => goTo(cur - 1));
+  btnNext.addEventListener('click', () => goTo(cur + 1));
+
+  document.addEventListener('keydown', e => {
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === ' ') { e.preventDefault(); goTo(cur + 1); }
+    if (e.key === 'ArrowLeft'  || e.key === 'ArrowUp')                    { e.preventDefault(); goTo(cur - 1); }
+  });
+
+  // init progress
+  progress.style.width = (1 / total * 100) + '%';
+</script>
+</body>
+</html>

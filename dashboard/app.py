@@ -398,38 +398,39 @@ def webhook():
     
     return 'OK'
 
-@handler.add(MessageEvent, message=TextMessage)
-def handle_message(event):
-    """處理 LINE 訊息"""
-    user_text = event.message.text.strip()
-    
-    # 使用 asyncio 執行非同步查詢
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    
-    try:
-        # 檢查是否為「股票名稱 一周」格式
-        if " 一周" in user_text or " 本周" in user_text:
-            stock_name = user_text.replace(" 一周", "").replace(" 本周", "").strip()
-            if stock_name:  # 有指定股票名稱
-                reply = loop.run_until_complete(get_stock_weekly_analysis_text(stock_name))
-            else:  # 只輸入"一周"或"本周"
+def _register_line_handlers():
+    @handler.add(MessageEvent, message=TextMessage)
+    def handle_message(event):
+        """處理 LINE 訊息"""
+        user_text = event.message.text.strip()
+
+        # 使用 asyncio 執行非同步查詢
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+        try:
+            # 檢查是否為「股票名稱 一周」格式
+            if " 一周" in user_text or " 本周" in user_text:
+                stock_name = user_text.replace(" 一周", "").replace(" 本周", "").strip()
+                if stock_name:  # 有指定股票名稱
+                    reply = loop.run_until_complete(get_stock_weekly_analysis_text(stock_name))
+                else:  # 只輸入"一周"或"本周"
+                    reply = loop.run_until_complete(get_weekly_analysis_text())
+            elif user_text.startswith("查詢"):
+                stock_name = user_text.replace("查詢", "").strip()
+                reply = loop.run_until_complete(query_stock_news(stock_name))
+            elif user_text == "熱門":
+                reply = loop.run_until_complete(get_top_stocks_text())
+            elif user_text == "最新":
+                reply = loop.run_until_complete(get_latest_news_text())
+            elif user_text == "正面":
+                reply = loop.run_until_complete(get_sentiment_news_text(7, 9))
+            elif user_text == "負面":
+                reply = loop.run_until_complete(get_sentiment_news_text(1, 3))
+            elif user_text == "一周" or user_text == "本周":
                 reply = loop.run_until_complete(get_weekly_analysis_text())
-        elif user_text.startswith("查詢"):
-            stock_name = user_text.replace("查詢", "").strip()
-            reply = loop.run_until_complete(query_stock_news(stock_name))
-        elif user_text == "熱門":
-            reply = loop.run_until_complete(get_top_stocks_text())
-        elif user_text == "最新":
-            reply = loop.run_until_complete(get_latest_news_text())
-        elif user_text == "正面":
-            reply = loop.run_until_complete(get_sentiment_news_text(7, 9))
-        elif user_text == "負面":
-            reply = loop.run_until_complete(get_sentiment_news_text(1, 3))
-        elif user_text == "一周" or user_text == "本周":
-            reply = loop.run_until_complete(get_weekly_analysis_text())
-        else:
-            reply = """📊 股市新聞 Bot 指令說明：
+            else:
+                reply = """📊 股市新聞 Bot 指令說明：
 
 查詢 [股票名稱] - 查詢特定股票新聞
 熱門 - 最活躍的10檔股票
@@ -442,13 +443,17 @@ def handle_message(event):
 範例：
 查詢 台積電
 台積電 一周"""
-    finally:
-        loop.close()
-    
-    line_bot_api.reply_message(
-        event.reply_token,
-        TextSendMessage(text=reply)
-    )
+        finally:
+            loop.close()
+
+        line_bot_api.reply_message(
+            event.reply_token,
+            TextSendMessage(text=reply)
+        )
+
+if handler:
+    _register_line_handlers()
+
 
 # ================= LINE Bot 查詢函式 =================
 
