@@ -229,23 +229,43 @@ python crawler_rare.py
 - 中斷後重新執行會自動跳過已完成的股票
 
 ### 7. 啟動 Dashboard + LINE Bot
-```bash
+
+你可以使用兩種方法啟動，推薦使用第一種（一鍵啟動）：
+
+**方法一：使用 Batch 腳本（推薦）**
+在資料夾中雙擊執行 `start_dashboard.bat`，或在終端機中執行：
+```powershell
+cd dashboard
+start_dashboard.bat
+```
+
+**方法二：手動執行 Python**
+```powershell
 cd dashboard
 python app.py
 ```
 
-Dashboard 會在 http://localhost:5000 啟動
+Dashboard 會在 http://localhost:5000 啟動。啟動後，LINE Bot 的伺服器也就緒了。
 
-### 8. 測試 LINE Bot (使用 ngrok)
-```bash
-# 另開終端
-C:\ngrok\ngrok.exe http 5000
+### 8. 啟用 LINE Bot 功能 (使用 ngrok)
+
+要讓 LINE 能夠連線到你的電腦，需要使用 ngrok 將本地的 5000 端口暴露到網際網路上：
+
+1. 開啟一個**新的**終端機視窗，執行：
+```powershell
+# 依據你安裝 ngrok 的路徑，可能需要輸入完整路徑如 C:\ngrok\ngrok.exe http 5000
+ngrok http 5000
 ```
 
-將 ngrok URL 設定到 LINE Developers Console:
+2. 複製 ngrok 提供的 **HTTPS** URL。
+3. 前往 [LINE Developers Console](https://developers.line.biz/console/)，進入你的 Messaging API Channel。
+4. 在 Webhook settings 中設定 Webhook URL（記得加上 `/webhook`）：
 ```
-https://your-ngrok-url.ngrok-free.dev/callback
+https://你的ngrok網址/webhook
 ```
+5. 點擊 **Verify** 確認連線成功，並確保 **Use webhook** 已開啟。
+
+> **注意：** 確保 `dashboard/.env` 中已設定 `LINE_CHANNEL_SECRET` 和 `LINE_CHANNEL_ACCESS_TOKEN`。免費用戶每次重啟 ngrok 網址會變更，需重新設定 Webhook URL。
 
 ---
 

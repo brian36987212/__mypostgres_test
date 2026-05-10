@@ -118,33 +118,61 @@ def parse_news_from_nuxt(script_content: str, stock_id: str, days_filter: int):
     
     news_block = news_match.group(1)
     
-    # 匹配每個新聞物件
-    # category 和 stocks 都可能是字串 "..." 或變數引用 (單字母)
-    # 格式1: {id:"...",category:"...",title:"...",date:"...",stocks:"..."}
-    # 格式2: {id:"...",category:l,title:"...",date:"...",stocks:n}
-    news_pattern = r'\{id:"([^"]+)",category:(?:"([^"]*)"|([a-z])),title:"(.*?)",link:"([^"]+)",source:[^,]+,image:[^,]+,date:"([^"]+)",stocks:(?:"([^"]+)"|([a-z]))\}'
+    # 由於 NUXT 資料中某些屬性（如 date）可能會被壓縮為變數（例如 date:u），
+    # 舊的貪婪/正則寫法會導致解析邊界失效並把整串物件都吃進 title 裡。
+    # 更安全的做法是將字串依照 '},{' 拆分成單獨的新聞物件，然後再針對每個物件抓取屬性。
+    items = re.split(r'\},\{', news_block)
     
-    matches = re.finditer(news_pattern, news_block)
-    
-    for match in matches:
+    for item in items:
         try:
-            news_id = match.group(1)
-            # category 可能是 group(2) 字串 或 group(3) 變數
-            category = match.group(2) if match.group(2) is not None else (f"VAR_{match.group(3)}" if match.group(3) else "")
-            title = match.group(4)
-            link = match.group(5).replace('\\u002F', '/')
-            date_str = match.group(6)
-            # stocks 可能是 group(7) 字串 或 group(8) 變數
-            related_stocks = match.group(7) if match.group(7) else f"{stock_id}(TW)"
+            id_match = re.search(r'id:"([^"]+)"', item)
+            # 針對 title，非貪婪匹配直到遇到下一個屬性或引號結束
+            title_match = re.search(r'title:"(.*?)"(?:,link:|,source:|,image:|,date:|,stocks:|,category:)', item)
+            if not title_match:
+                title_match = re.search(r'title:"(.*?)"', item)
+                
+            link_match = re.search(r'link:"([^"]+)"', item)
             
+            if not (id_match and title_match and link_match):
+                continue
+                
+            news_id = id_match.group(1)
+            title = title_match.group(1)
+            # 如果因為拆分或正則的問題導致結尾多包含了一個雙引號，把它清掉
+            if title.endswith('"'):
+                title = title[:-1]
+                
+            # 將 JSON 轉義的斜線 \u002F 還原為 /
+            title = title.replace('\\u002F', '/')
+                
+            link = link_match.group(1).replace('\\u002F', '/')
+            
+            category_match = re.search(r'category:(?:"([^"]*)"|([a-z]))', item)
+            category = ""
+            if category_match:
+                category = category_match.group(1) if category_match.group(1) is not None else f"VAR_{category_match.group(2)}"
+                
+            stocks_match = re.search(r'stocks:(?:"([^"]+)"|([a-z]))', item)
+            related_stocks = ""
+            if stocks_match:
+                related_stocks = stocks_match.group(1) if stocks_match.group(1) else f"{stock_id}(TW)"
+            else:
+                related_stocks = f"{stock_id}(TW)"
+                
             # 解析發布時間
             published_at = None
-            try:
-                published_at = datetime.strptime(date_str, "%Y-%m-%d %H:%M:%S")
-                published_at = published_at.replace(tzinfo=ZoneInfo("Asia/Taipei"))
-            except:
-                continue
+            date_match = re.search(r'date:"([^"]+)"', item)
+            if date_match:
+                try:
+                    published_at = datetime.strptime(date_match.group(1), "%Y-%m-%d %H:%M:%S")
+                    published_at = published_at.replace(tzinfo=ZoneInfo("Asia/Taipei"))
+                except:
+                    pass
             
+            # 如果無法解析出確切時間 (例如 date:u 變數)，暫時給予當下時間作為 fallback
+            if not published_at:
+                published_at = datetime.now(ZoneInfo("Asia/Taipei"))
+                
             # 過濾日期
             if published_at < cutoff_date:
                 continue

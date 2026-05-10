@@ -180,30 +180,33 @@ async def _get_recent_news():
     pool = await get_db_pool()
     async with pool.acquire() as conn:
         rows = await conn.fetch("""
-            SELECT DISTINCT ON (title, stock_id)
-                stock_id, stock_name, title, publisher, sentiment_score, published_text, fetched_at, source, url
-            FROM (
-                SELECT n.stock_id, COALESCE(m.stock_name, n.stock_id) as stock_name,
-                       n.title, n.publisher, n.sentiment_score, n.published_text, n.fetched_at,
-                       'Yahoo' as source, n.url
-                FROM yahoo_stock_news n
-                LEFT JOIN stock_mapping m ON n.stock_id = m.stock_id
-                UNION ALL
-                SELECT n.stock_id, COALESCE(m.stock_name, n.stock_id) as stock_name,
-                       n.title, n.category_name as publisher, n.sentiment_score, 
-                       TO_CHAR(n.published_at, 'YYYY年MM月DD日 HH24:MI') as published_text, 
-                       n.fetched_at, '鉅亨網' as source, n.url
-                FROM cnyes_stock_news n
-                LEFT JOIN stock_mapping m ON n.stock_id = m.stock_id
-                UNION ALL
-                SELECT n.stock_id, COALESCE(m.stock_name, n.stock_id) as stock_name,
-                       n.title, n.category as publisher, n.sentiment_score,
-                       TO_CHAR(n.published_at, 'YYYY年MM月DD日 HH24:MI') as published_text,
-                       n.fetched_at, 'NStock' as source, n.url
-                FROM nstock_stock_news n
-                LEFT JOIN stock_mapping m ON n.stock_id = m.stock_id
-            ) AS combined
-            ORDER BY title, stock_id, fetched_at DESC
+            SELECT * FROM (
+                SELECT DISTINCT ON (title, stock_id)
+                    stock_id, stock_name, title, publisher, sentiment_score, published_text, fetched_at, source, url
+                FROM (
+                    SELECT n.stock_id, COALESCE(m.stock_name, n.stock_id) as stock_name,
+                           n.title, n.publisher, n.sentiment_score, n.published_text, n.fetched_at,
+                           'Yahoo' as source, n.url
+                    FROM yahoo_stock_news n
+                    LEFT JOIN stock_mapping m ON n.stock_id = m.stock_id
+                    UNION ALL
+                    SELECT n.stock_id, COALESCE(m.stock_name, n.stock_id) as stock_name,
+                           n.title, n.category_name as publisher, n.sentiment_score, 
+                           TO_CHAR(n.published_at, 'YYYY年MM月DD日 HH24:MI') as published_text, 
+                           n.fetched_at, '鉅亨網' as source, n.url
+                    FROM cnyes_stock_news n
+                    LEFT JOIN stock_mapping m ON n.stock_id = m.stock_id
+                    UNION ALL
+                    SELECT n.stock_id, COALESCE(m.stock_name, n.stock_id) as stock_name,
+                           n.title, n.category as publisher, n.sentiment_score,
+                           TO_CHAR(n.published_at, 'YYYY年MM月DD日 HH24:MI') as published_text,
+                           n.fetched_at, 'NStock' as source, n.url
+                    FROM nstock_stock_news n
+                    LEFT JOIN stock_mapping m ON n.stock_id = m.stock_id
+                ) AS combined
+                ORDER BY title, stock_id, fetched_at DESC
+            ) AS unique_news
+            ORDER BY fetched_at DESC
             LIMIT 20
         """)
     await pool.close()
@@ -462,29 +465,32 @@ async def query_stock_news(stock_name):
     pool = await get_db_pool()
     async with pool.acquire() as conn:
         rows = await conn.fetch("""
-            SELECT DISTINCT ON (title, stock_id)
-                title, sentiment_score, published_text, publisher, source, fetched_at
-            FROM (
-                SELECT n.title, n.sentiment_score, n.published_text, n.publisher, 'Yahoo' as source, n.fetched_at
-                FROM yahoo_stock_news n
-                LEFT JOIN stock_mapping m ON n.stock_id = m.stock_id
-                WHERE m.stock_name LIKE $1 OR n.stock_id LIKE $1
-                UNION ALL
-                SELECT n.title, n.sentiment_score, 
-                       TO_CHAR(n.published_at, 'YYYY年MM月DD日 HH24:MI') as published_text,
-                       n.category_name as publisher, '鉅亨網' as source, n.fetched_at
-                FROM cnyes_stock_news n
-                LEFT JOIN stock_mapping m ON n.stock_id = m.stock_id
-                WHERE m.stock_name LIKE $1 OR n.stock_id LIKE $1
-                UNION ALL
-                SELECT n.title, n.sentiment_score,
-                       TO_CHAR(n.published_at, 'YYYY年MM月DD日 HH24:MI') as published_text,
-                       n.category as publisher, 'NStock' as source, n.fetched_at
-                FROM nstock_stock_news n
-                LEFT JOIN stock_mapping m ON n.stock_id = m.stock_id
-                WHERE m.stock_name LIKE $1 OR n.stock_id LIKE $1
-            ) AS combined
-            ORDER BY title, stock_id, fetched_at DESC
+            SELECT * FROM (
+                SELECT DISTINCT ON (title, stock_id)
+                    title, sentiment_score, published_text, publisher, source, fetched_at
+                FROM (
+                    SELECT n.title, n.sentiment_score, n.published_text, n.publisher, 'Yahoo' as source, n.fetched_at, n.stock_id
+                    FROM yahoo_stock_news n
+                    LEFT JOIN stock_mapping m ON n.stock_id = m.stock_id
+                    WHERE m.stock_name LIKE $1 OR n.stock_id LIKE $1
+                    UNION ALL
+                    SELECT n.title, n.sentiment_score, 
+                           TO_CHAR(n.published_at, 'YYYY年MM月DD日 HH24:MI') as published_text,
+                           n.category_name as publisher, '鉅亨網' as source, n.fetched_at, n.stock_id
+                    FROM cnyes_stock_news n
+                    LEFT JOIN stock_mapping m ON n.stock_id = m.stock_id
+                    WHERE m.stock_name LIKE $1 OR n.stock_id LIKE $1
+                    UNION ALL
+                    SELECT n.title, n.sentiment_score,
+                           TO_CHAR(n.published_at, 'YYYY年MM月DD日 HH24:MI') as published_text,
+                           n.category as publisher, 'NStock' as source, n.fetched_at, n.stock_id
+                    FROM nstock_stock_news n
+                    LEFT JOIN stock_mapping m ON n.stock_id = m.stock_id
+                    WHERE m.stock_name LIKE $1 OR n.stock_id LIKE $1
+                ) AS combined
+                ORDER BY title, stock_id, fetched_at DESC
+            ) AS unique_news
+            ORDER BY fetched_at DESC
             LIMIT 5
         """, f'%{stock_name}%')
     await pool.close()
@@ -533,29 +539,32 @@ async def get_latest_news_text():
     pool = await get_db_pool()
     async with pool.acquire() as conn:
         rows = await conn.fetch("""
-            SELECT DISTINCT ON (title, stock_name)
-                stock_name, title, sentiment_score, published_text, source, fetched_at
-            FROM (
-                SELECT COALESCE(m.stock_name, n.stock_id) as stock_name,
-                       n.title, n.sentiment_score, n.published_text, 'Yahoo' as source, n.fetched_at
-                FROM yahoo_stock_news n
-                LEFT JOIN stock_mapping m ON n.stock_id = m.stock_id
-                UNION ALL
-                SELECT COALESCE(m.stock_name, n.stock_id) as stock_name,
-                       n.title, n.sentiment_score, 
-                       TO_CHAR(n.published_at, 'YYYY年MM月DD日 HH24:MI') as published_text,
-                       '鉅亨網' as source, n.fetched_at
-                FROM cnyes_stock_news n
-                LEFT JOIN stock_mapping m ON n.stock_id = m.stock_id
-                UNION ALL
-                SELECT COALESCE(m.stock_name, n.stock_id) as stock_name,
-                       n.title, n.sentiment_score,
-                       TO_CHAR(n.published_at, 'YYYY年MM月DD日 HH24:MI') as published_text,
-                       'NStock' as source, n.fetched_at
-                FROM nstock_stock_news n
-                LEFT JOIN stock_mapping m ON n.stock_id = m.stock_id
-            ) AS combined
-            ORDER BY title, stock_name, fetched_at DESC
+            SELECT * FROM (
+                SELECT DISTINCT ON (title, stock_name)
+                    stock_name, title, sentiment_score, published_text, source, fetched_at
+                FROM (
+                    SELECT COALESCE(m.stock_name, n.stock_id) as stock_name,
+                           n.title, n.sentiment_score, n.published_text, 'Yahoo' as source, n.fetched_at
+                    FROM yahoo_stock_news n
+                    LEFT JOIN stock_mapping m ON n.stock_id = m.stock_id
+                    UNION ALL
+                    SELECT COALESCE(m.stock_name, n.stock_id) as stock_name,
+                           n.title, n.sentiment_score, 
+                           TO_CHAR(n.published_at, 'YYYY年MM月DD日 HH24:MI') as published_text,
+                           '鉅亨網' as source, n.fetched_at
+                    FROM cnyes_stock_news n
+                    LEFT JOIN stock_mapping m ON n.stock_id = m.stock_id
+                    UNION ALL
+                    SELECT COALESCE(m.stock_name, n.stock_id) as stock_name,
+                           n.title, n.sentiment_score,
+                           TO_CHAR(n.published_at, 'YYYY年MM月DD日 HH24:MI') as published_text,
+                           'NStock' as source, n.fetched_at
+                    FROM nstock_stock_news n
+                    LEFT JOIN stock_mapping m ON n.stock_id = m.stock_id
+                ) AS combined
+                ORDER BY title, stock_name, fetched_at DESC
+            ) AS unique_news
+            ORDER BY fetched_at DESC
             LIMIT 5
         """)
     await pool.close()
@@ -574,28 +583,31 @@ async def get_sentiment_news_text(min_score, max_score):
     pool = await get_db_pool()
     async with pool.acquire() as conn:
         rows = await conn.fetch("""
-            SELECT DISTINCT ON (title, stock_name)
-                stock_name, title, sentiment_score, source
-            FROM (
-                SELECT COALESCE(m.stock_name, n.stock_id) as stock_name,
-                       n.title, n.sentiment_score, 'Yahoo' as source, n.fetched_at
-                FROM yahoo_stock_news n
-                LEFT JOIN stock_mapping m ON n.stock_id = m.stock_id
-                WHERE n.sentiment_score BETWEEN $1 AND $2
-                UNION ALL
-                SELECT COALESCE(m.stock_name, n.stock_id) as stock_name,
-                       n.title, n.sentiment_score, '鉅亨網' as source, n.fetched_at
-                FROM cnyes_stock_news n
-                LEFT JOIN stock_mapping m ON n.stock_id = m.stock_id
-                WHERE n.sentiment_score BETWEEN $1 AND $2
-                UNION ALL
-                SELECT COALESCE(m.stock_name, n.stock_id) as stock_name,
-                       n.title, n.sentiment_score, 'NStock' as source, n.fetched_at
-                FROM nstock_stock_news n
-                LEFT JOIN stock_mapping m ON n.stock_id = m.stock_id
-                WHERE n.sentiment_score BETWEEN $1 AND $2
-            ) AS combined
-            ORDER BY title, stock_name, fetched_at DESC
+            SELECT stock_name, title, sentiment_score, source FROM (
+                SELECT DISTINCT ON (title, stock_name)
+                    stock_name, title, sentiment_score, source, fetched_at
+                FROM (
+                    SELECT COALESCE(m.stock_name, n.stock_id) as stock_name,
+                           n.title, n.sentiment_score, 'Yahoo' as source, n.fetched_at
+                    FROM yahoo_stock_news n
+                    LEFT JOIN stock_mapping m ON n.stock_id = m.stock_id
+                    WHERE n.sentiment_score BETWEEN $1 AND $2
+                    UNION ALL
+                    SELECT COALESCE(m.stock_name, n.stock_id) as stock_name,
+                           n.title, n.sentiment_score, '鉅亨網' as source, n.fetched_at
+                    FROM cnyes_stock_news n
+                    LEFT JOIN stock_mapping m ON n.stock_id = m.stock_id
+                    WHERE n.sentiment_score BETWEEN $1 AND $2
+                    UNION ALL
+                    SELECT COALESCE(m.stock_name, n.stock_id) as stock_name,
+                           n.title, n.sentiment_score, 'NStock' as source, n.fetched_at
+                    FROM nstock_stock_news n
+                    LEFT JOIN stock_mapping m ON n.stock_id = m.stock_id
+                    WHERE n.sentiment_score BETWEEN $1 AND $2
+                ) AS combined
+                ORDER BY title, stock_name, fetched_at DESC
+            ) AS unique_news
+            ORDER BY fetched_at DESC
             LIMIT 5
         """, min_score, max_score)
     await pool.close()
@@ -712,32 +724,35 @@ async def get_stock_weekly_analysis_text(stock_name):
         
         # 查詢該股票的一周新聞
         news_rows = await conn.fetch("""
-            SELECT DISTINCT ON (title, stock_id)
-                title, sentiment_score, published_text, publisher, source, fetched_at
-            FROM (
-                SELECT n.title, n.sentiment_score, n.published_text, n.publisher, 'Yahoo' as source, n.fetched_at, n.stock_id
-                FROM yahoo_stock_news n
-                LEFT JOIN stock_mapping m ON n.stock_id = m.stock_id
-                WHERE (m.stock_name LIKE $1 OR n.stock_id LIKE $1)
-                  AND n.fetched_date >= $2
-                UNION ALL
-                SELECT n.title, n.sentiment_score, 
-                       TO_CHAR(n.published_at, 'YYYY年MM月DD日 HH24:MI') as published_text,
-                       n.category_name as publisher, '鉅亨網' as source, n.fetched_at, n.stock_id
-                FROM cnyes_stock_news n
-                LEFT JOIN stock_mapping m ON n.stock_id = m.stock_id
-                WHERE (m.stock_name LIKE $1 OR n.stock_id LIKE $1)
-                  AND n.fetched_date >= $2
-                UNION ALL
-                SELECT n.title, n.sentiment_score,
-                       TO_CHAR(n.published_at, 'YYYY年MM月DD日 HH24:MI') as published_text,
-                       n.category as publisher, 'NStock' as source, n.fetched_at, n.stock_id
-                FROM nstock_stock_news n
-                LEFT JOIN stock_mapping m ON n.stock_id = m.stock_id
-                WHERE (m.stock_name LIKE $1 OR n.stock_id LIKE $1)
-                  AND DATE(n.fetched_at) >= $2
-            ) AS combined
-            ORDER BY title, stock_id, fetched_at DESC
+            SELECT * FROM (
+                SELECT DISTINCT ON (title, stock_id)
+                    title, sentiment_score, published_text, publisher, source, fetched_at
+                FROM (
+                    SELECT n.title, n.sentiment_score, n.published_text, n.publisher, 'Yahoo' as source, n.fetched_at, n.stock_id
+                    FROM yahoo_stock_news n
+                    LEFT JOIN stock_mapping m ON n.stock_id = m.stock_id
+                    WHERE (m.stock_name LIKE $1 OR n.stock_id LIKE $1)
+                      AND n.fetched_date >= $2
+                    UNION ALL
+                    SELECT n.title, n.sentiment_score, 
+                           TO_CHAR(n.published_at, 'YYYY年MM月DD日 HH24:MI') as published_text,
+                           n.category_name as publisher, '鉅亨網' as source, n.fetched_at, n.stock_id
+                    FROM cnyes_stock_news n
+                    LEFT JOIN stock_mapping m ON n.stock_id = m.stock_id
+                    WHERE (m.stock_name LIKE $1 OR n.stock_id LIKE $1)
+                      AND n.fetched_date >= $2
+                    UNION ALL
+                    SELECT n.title, n.sentiment_score,
+                           TO_CHAR(n.published_at, 'YYYY年MM月DD日 HH24:MI') as published_text,
+                           n.category as publisher, 'NStock' as source, n.fetched_at, n.stock_id
+                    FROM nstock_stock_news n
+                    LEFT JOIN stock_mapping m ON n.stock_id = m.stock_id
+                    WHERE (m.stock_name LIKE $1 OR n.stock_id LIKE $1)
+                      AND DATE(n.fetched_at) >= $2
+                ) AS combined
+                ORDER BY title, stock_id, fetched_at DESC
+            ) AS unique_news
+            ORDER BY fetched_at DESC
         """, f'%{stock_name}%', week_ago)
         
         if not news_rows:
