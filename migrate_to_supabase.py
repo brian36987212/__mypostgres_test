@@ -5,9 +5,9 @@
 import psycopg2
 import psycopg2.extras
 
-LOCAL_DSN = "postgresql://postgres:lab529@localhost:5432/postgres"
-SUPABASE_DSN = "postgresql://postgres:QXnb3oWIiZrb9abV@db.lxtzmpdqzdvfwsdzrlje.supabase.co:5432/postgres"
-SUPABASE_POOLER_DSN = "postgresql://postgres.lxtzmpdqzdvfwsdzrlje:QXnb3oWIiZrb9abV@aws-1-ap-northeast-1.pooler.supabase.com:5432/postgres"
+LOCAL_DSN = os.getenv("LOCAL_DB_URL", "postgresql://postgres:lab529@localhost:5432/postgres")
+SUPABASE_DSN = os.getenv("SUPABASE_URL", "")
+SUPABASE_POOLER_DSN = os.getenv("SUPABASE_POOLER_URL", "")
 
 BATCH_SIZE = 500
 
