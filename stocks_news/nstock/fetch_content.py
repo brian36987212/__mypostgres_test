@@ -150,10 +150,9 @@ async def fetch_and_update_content(sem: asyncio.Semaphore, session: AsyncSession
         # 提取內文
         content = parse_detail_page(html)
         if not content:
-            # 某些新聞可能沒有內文(如 article_m),標記為空字串
-            async with db_pool.acquire() as conn:
-                await conn.execute(UPDATE_CONTENT_SQL, "", news_id)
-            print(f"  [SKIP] ({stock_id}) 無實際內文,已標記")
+            # 標記為已處理（寫 NULL 保持語意：沒有可用內文，跳過情緒分析）
+            # 不寫入空字串，避免 sentiment query 的 content != '' 判斷失效
+            print(f"  [SKIP] ({stock_id}) 無實際內文，跳過")
             return
         
         # 更新資料庫

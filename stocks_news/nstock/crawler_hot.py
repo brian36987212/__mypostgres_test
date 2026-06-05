@@ -64,10 +64,13 @@ CREATE TABLE IF NOT EXISTS public.nstock_stock_news (
   UNIQUE (stock_id, news_id)
 );
 
+ALTER TABLE public.nstock_stock_news ADD COLUMN IF NOT EXISTS fetched_date DATE;
+
 CREATE INDEX IF NOT EXISTS idx_nstock_stock_id ON nstock_stock_news(stock_id);
 CREATE INDEX IF NOT EXISTS idx_nstock_published_at ON nstock_stock_news(published_at);
+CREATE INDEX IF NOT EXISTS idx_nstock_fetched_date ON nstock_stock_news(fetched_date);
 CREATE INDEX IF NOT EXISTS idx_nstock_content_null ON nstock_stock_news(stock_id) WHERE content IS NULL;
-CREATE INDEX IF NOT EXISTS idx_nstock_sentiment_null ON nstock_stock_news(stock_id) WHERE sentiment_score IS NULL AND content IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_nstock_sentiment_null ON nstock_stock_news(stock_id) WHERE sentiment_score IS NULL AND content IS NOT NULL AND content != '';
 """
 
 UPSERT_SQL = """
@@ -84,6 +87,12 @@ ON CONFLICT (stock_id, news_id) DO UPDATE SET
   fetched_at = EXCLUDED.fetched_at,
   fetched_date = EXCLUDED.fetched_date,
   fetched_time = EXCLUDED.fetched_time;
+"""
+
+BACKFILL_DATE_SQL = """
+UPDATE public.nstock_stock_news
+SET fetched_date = DATE(fetched_at)
+WHERE fetched_date IS NULL AND fetched_at IS NOT NULL;
 """
 
 # ================= 輔助函式區 =================
@@ -195,7 +204,12 @@ def parse_news_from_nuxt(script_content: str, stock_id: str, days_filter: int):
 
 
 async def fetch_stock_news(session: AsyncSession, stock_id: str, semaphore: asyncio.Semaphore, days_filter: int = 3):
-    """抓取單支股票的新聞"""
+    """抓取單支股票的新聞
+    回傳:
+      None  -> 連線失敗（不記錄進度，下次重試）
+      []    -> 成功但無新聞（記錄進度，跳過）
+      [...]  -> 有新聞
+    """
     async with semaphore:
         url = f"https://www.nstock.tw/stock_info?stock_id={stock_id}"
         
@@ -210,6 +224,10 @@ async def fetch_stock_news(session: AsyncSession, stock_id: str, semaphore: asyn
             
             if response.status_code != 200:
                 print(f"  [X] {stock_id}: HTTP {response.status_code}")
+                # 4xx 是股票本身問題（如下市），記錄進度避免重複
+                # 5xx / 連線問題才回傳 None
+                if response.status_code >= 500:
+                    return None
                 return []
             
             # 提取 NUXT 資料
@@ -229,8 +247,10 @@ async def fetch_stock_news(session: AsyncSession, stock_id: str, semaphore: asyn
             return news_list
             
         except Exception as e:
-            print(f"  [X] {stock_id}: {e}")
-            return []
+            err_str = str(e)
+            print(f"  [X] {stock_id}: {err_str}")
+            # curl error 7 = 連線失敗，回傳 None 讓 main 不記錄進度
+            return None
 
 
 async def save_news_to_db(pool: asyncpg.Pool, news_list: list):
@@ -322,6 +342,10 @@ async def main():
         pool = await asyncpg.create_pool(PG_DSN, min_size=2, max_size=10)
         async with pool.acquire() as conn:
             await conn.execute(CREATE_TABLE_SQL)
+            # 補填舊資料的 fetched_date
+            backfilled = await conn.execute(BACKFILL_DATE_SQL)
+            if backfilled != "UPDATE 0":
+                print(f"[INFO] 補填 fetched_date: {backfilled}\n")
         print("[OK] 資料庫連線成功\n")
     except Exception as e:
         print(f"[ERROR] 資料庫連線失敗: {e}")
@@ -330,6 +354,8 @@ async def main():
     # 開始爬取
     semaphore = asyncio.Semaphore(MAX_CONCURRENCY)
     total_news = 0
+    failed_count = 0       # 連線失敗計數
+    MAX_CONSECUTIVE_FAIL = 10  # 連續失敗超過此數視為網站掛掉，提前結束
     start_time = time.time()
     
     async with AsyncSession() as session:
@@ -339,12 +365,27 @@ async def main():
             # 抓取新聞
             news_list = await fetch_stock_news(session, stock_id, semaphore, DAYS_FILTER)
             
+            if news_list is None:
+                # 連線失敗 → 不記錄進度（下次重跑會重試）
+                failed_count += 1
+                print(f"  [WARN] 連線失敗，跳過不記錄進度 (連續失敗: {failed_count})")
+                if failed_count >= MAX_CONSECUTIVE_FAIL:
+                    print(f"\n[ABORT] 連續失敗 {failed_count} 次，疑似網站無法連線，提前結束")
+                    print(f"[INFO] 下次重跑將從失敗的股票繼續")
+                    break
+                # 短暫等待後繼續嘗試下一支
+                await asyncio.sleep(5)
+                continue
+            
+            # 連線成功，重置失敗計數
+            failed_count = 0
+            
             # 儲存到資料庫
             if news_list:
                 saved = await save_news_to_db(pool, news_list)
                 total_news += saved
             
-            # 記錄進度
+            # 記錄進度（只有成功時才標記）
             save_progress(stock_id)
             
             # 延遲

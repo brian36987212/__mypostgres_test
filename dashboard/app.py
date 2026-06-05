@@ -22,7 +22,7 @@ def add_header(response):
     response.headers["Expires"] = "0"
     return response
 
-PG_DSN = "postgresql://postgres:lab529@localhost:5432/postgres"
+PG_DSN = os.getenv("DATABASE_URL", "postgresql://postgres:lab529@localhost:5432/postgres")
 
 # LINE Bot 設定
 LINE_CHANNEL_SECRET = os.getenv('LINE_CHANNEL_SECRET', '')
@@ -80,7 +80,7 @@ async def _get_stats():
                 UNION ALL
                 SELECT id FROM cnyes_stock_news WHERE fetched_date = $1
                 UNION ALL
-                SELECT id FROM nstock_stock_news WHERE DATE(fetched_at) = $1
+                SELECT id FROM nstock_stock_news WHERE fetched_date = $1
             ) AS combined
         """, today)
         
@@ -248,10 +248,10 @@ async def _get_daily_trend():
                 WHERE fetched_date >= CURRENT_DATE - INTERVAL '30 days'
                 GROUP BY fetched_date
                 UNION ALL
-                SELECT DATE(fetched_at) as fetched_date, COUNT(*) as count
+                SELECT fetched_date, COUNT(*) as count
                 FROM nstock_stock_news
-                WHERE fetched_at >= CURRENT_DATE - INTERVAL '30 days'
-                GROUP BY DATE(fetched_at)
+                WHERE fetched_date >= CURRENT_DATE - INTERVAL '30 days'
+                GROUP BY fetched_date
             ) AS combined
             GROUP BY fetched_date
             ORDER BY fetched_date
@@ -285,7 +285,7 @@ async def _get_weekly_analysis():
                 UNION ALL
                 SELECT id FROM cnyes_stock_news WHERE fetched_date >= $1
                 UNION ALL
-                SELECT id FROM nstock_stock_news WHERE DATE(fetched_at) >= $1
+                SELECT id FROM nstock_stock_news WHERE fetched_date >= $1
             ) AS combined
         """, week_ago)
         
@@ -299,7 +299,7 @@ async def _get_weekly_analysis():
                 WHERE sentiment_score IS NOT NULL AND fetched_date >= $1
                 UNION ALL
                 SELECT sentiment_score FROM nstock_stock_news
-                WHERE sentiment_score IS NOT NULL AND DATE(fetched_at) >= $1
+                WHERE sentiment_score IS NOT NULL AND fetched_date >= $1
             ) AS combined
         """, week_ago)
         
@@ -311,7 +311,7 @@ async def _get_weekly_analysis():
                 UNION ALL
                 SELECT stock_id, COUNT(*) as news_count FROM cnyes_stock_news WHERE fetched_date >= $1 GROUP BY stock_id
                 UNION ALL
-                SELECT stock_id, COUNT(*) as news_count FROM nstock_stock_news WHERE DATE(fetched_at) >= $1 GROUP BY stock_id
+                SELECT stock_id, COUNT(*) as news_count FROM nstock_stock_news WHERE fetched_date >= $1 GROUP BY stock_id
             ) AS combined
             LEFT JOIN stock_mapping m ON combined.stock_id = m.stock_id
             GROUP BY combined.stock_id, m.stock_name
@@ -326,7 +326,7 @@ async def _get_weekly_analysis():
                 UNION ALL
                 SELECT id FROM cnyes_stock_news WHERE sentiment_score >= 7 AND fetched_date >= $1
                 UNION ALL
-                SELECT id FROM nstock_stock_news WHERE sentiment_score >= 7 AND DATE(fetched_at) >= $1
+                SELECT id FROM nstock_stock_news WHERE sentiment_score >= 7 AND fetched_date >= $1
             ) AS combined
         """, week_ago)
         
@@ -336,7 +336,7 @@ async def _get_weekly_analysis():
                 UNION ALL
                 SELECT id FROM cnyes_stock_news WHERE sentiment_score <= 3 AND fetched_date >= $1
                 UNION ALL
-                SELECT id FROM nstock_stock_news WHERE sentiment_score <= 3 AND DATE(fetched_at) >= $1
+                SELECT id FROM nstock_stock_news WHERE sentiment_score <= 3 AND fetched_date >= $1
             ) AS combined
         """, week_ago)
         
@@ -370,8 +370,8 @@ async def _get_weekly_sentiment_trend():
                 SELECT fetched_date, sentiment_score FROM cnyes_stock_news 
                 WHERE sentiment_score IS NOT NULL AND fetched_date >= CURRENT_DATE - INTERVAL '7 days'
                 UNION ALL
-                SELECT DATE(fetched_at) as fetched_date, sentiment_score FROM nstock_stock_news
-                WHERE sentiment_score IS NOT NULL AND fetched_at >= CURRENT_DATE - INTERVAL '7 days'
+                SELECT fetched_date, sentiment_score FROM nstock_stock_news
+                WHERE sentiment_score IS NOT NULL AND fetched_date >= CURRENT_DATE - INTERVAL '7 days'
             ) AS combined
             GROUP BY fetched_date
             ORDER BY fetched_date
@@ -637,7 +637,7 @@ async def get_weekly_analysis_text():
                 UNION ALL
                 SELECT id FROM cnyes_stock_news WHERE fetched_date >= $1
                 UNION ALL
-                SELECT id FROM nstock_stock_news WHERE DATE(fetched_at) >= $1
+                SELECT id FROM nstock_stock_news WHERE fetched_date >= $1
             ) AS combined
         """, week_ago)
         
@@ -651,7 +651,7 @@ async def get_weekly_analysis_text():
                 WHERE sentiment_score IS NOT NULL AND fetched_date >= $1
                 UNION ALL
                 SELECT sentiment_score FROM nstock_stock_news
-                WHERE sentiment_score IS NOT NULL AND DATE(fetched_at) >= $1
+                WHERE sentiment_score IS NOT NULL AND fetched_date >= $1
             ) AS combined
         """, week_ago)
         
@@ -663,7 +663,7 @@ async def get_weekly_analysis_text():
                 UNION ALL
                 SELECT stock_id, COUNT(*) as news_count FROM cnyes_stock_news WHERE fetched_date >= $1 GROUP BY stock_id
                 UNION ALL
-                SELECT stock_id, COUNT(*) as news_count FROM nstock_stock_news WHERE DATE(fetched_at) >= $1 GROUP BY stock_id
+                SELECT stock_id, COUNT(*) as news_count FROM nstock_stock_news WHERE fetched_date >= $1 GROUP BY stock_id
             ) AS combined
             LEFT JOIN stock_mapping m ON combined.stock_id = m.stock_id
             GROUP BY combined.stock_id, m.stock_name
@@ -678,7 +678,7 @@ async def get_weekly_analysis_text():
                 UNION ALL
                 SELECT id FROM cnyes_stock_news WHERE sentiment_score >= 7 AND fetched_date >= $1
                 UNION ALL
-                SELECT id FROM nstock_stock_news WHERE sentiment_score >= 7 AND DATE(fetched_at) >= $1
+                SELECT id FROM nstock_stock_news WHERE sentiment_score >= 7 AND fetched_date >= $1
             ) AS combined
         """, week_ago)
         
@@ -688,7 +688,7 @@ async def get_weekly_analysis_text():
                 UNION ALL
                 SELECT id FROM cnyes_stock_news WHERE sentiment_score <= 3 AND fetched_date >= $1
                 UNION ALL
-                SELECT id FROM nstock_stock_news WHERE sentiment_score <= 3 AND DATE(fetched_at) >= $1
+                SELECT id FROM nstock_stock_news WHERE sentiment_score <= 3 AND fetched_date >= $1
             ) AS combined
         """, week_ago)
         
@@ -748,7 +748,7 @@ async def get_stock_weekly_analysis_text(stock_name):
                     FROM nstock_stock_news n
                     LEFT JOIN stock_mapping m ON n.stock_id = m.stock_id
                     WHERE (m.stock_name LIKE $1 OR n.stock_id LIKE $1)
-                      AND DATE(n.fetched_at) >= $2
+                      AND n.fetched_date >= $2
                 ) AS combined
                 ORDER BY title, stock_id, fetched_at DESC
             ) AS unique_news

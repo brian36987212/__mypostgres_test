@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>台股題材熱門度分析</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<script src="https://cdn.jsdelivr.net/npm/wordcloud@1.2.2/src/wordcloud2.min.js"></script>
+<style>
+:root{--bg:#0f1117;--card:#1a1d27;--border:#2a2d3a;
+  --acc:#6c63ff;--hot:#ff6b6b;--ptt:#ffa94d;--news:#51cf66;--cold:#868e96;
+  --tx:#e2e8f0;--mu:#718096}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--tx);font-family:'Segoe UI',sans-serif;padding:24px}
+h1{font-size:1.8rem;background:linear-gradient(90deg,#6c63ff,#f093fb);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:4px}
+.sub{color:var(--mu);font-size:.85rem;margin-bottom:24px}
+.stats{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:24px}
+.sc{background:var(--card);border:1px solid var(--border);border-radius:12px;
+  padding:14px 22px;flex:1;min-width:130px}
+.sc .n{font-size:2rem;font-weight:700}
+.sc .l{color:var(--mu);font-size:.78rem;margin-top:3px}
+.charts{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px}
+.cc{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:18px}
+.cc h3{color:var(--mu);font-size:.9rem;margin-bottom:12px}
+.cw{position:relative;height:300px}
+table{width:100%;border-collapse:collapse;background:var(--card);
+  border-radius:12px;overflow:hidden;border:1px solid var(--border)}
+thead th{background:#12151f;color:var(--mu);font-size:.78rem;text-transform:uppercase;
+  padding:10px 14px;text-align:left}
+tbody tr{border-top:1px solid var(--border);transition:background .15s}
+tbody tr:hover{background:#1e2130}
+td{padding:10px 14px;font-size:.88rem;vertical-align:middle}
+.kw{font-weight:600}
+.comb{font-weight:700;color:var(--acc)}
+.bar-wrap{background:#2a2d3a;border-radius:3px;height:5px;width:110px;overflow:hidden}
+.bar{height:100%;border-radius:3px}
+.bar-p{background:var(--ptt)}
+.bar-n{background:var(--news)}
+.badge{font-size:.72rem;padding:2px 7px;border-radius:20px;white-space:nowrap}
+.badge-hot {background:rgba(255,107,107,.18);color:var(--hot);border:1px solid rgba(255,107,107,.35)}
+.badge-ptt {background:rgba(255,169,77,.18);color:var(--ptt);border:1px solid rgba(255,169,77,.35)}
+.badge-news{background:rgba(81,207,102,.18);color:var(--news);border:1px solid rgba(81,207,102,.35)}
+.badge-cold{background:rgba(134,142,150,.18);color:var(--cold);border:1px solid rgba(134,142,150,.35)}
+.leg{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:10px;font-size:.8rem;color:var(--mu)}
+.dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:4px}
+.sec{font-size:1.05rem;font-weight:600;margin:22px 0 10px}
+.wc-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:18px;margin-bottom:24px}
+.wc-card h3{color:var(--mu);font-size:.9rem;margin-bottom:12px}
+#wordCloudCanvas{width:100%;height:350px}
+@media(max-width:700px){.charts{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<h1>🔥 台股題材熱門度分析</h1>
+<p class="sub">PTT 股票版討論熱度 × DB 新聞報導量 雙軸比對 ｜ 2026-05-26 17:13</p>
+
+<div class="stats">
+  <div class="sc"><div class="n" style="color:var(--hot)">5</div><div class="l">🔥🔥 雙熱門</div></div>
+  <div class="sc"><div class="n" style="color:var(--ptt)">2</div><div class="l">⚠️ PTT熱·媒體冷（早期信號）</div></div>
+  <div class="sc"><div class="n" style="color:var(--news)">16</div><div class="l">📰 媒體熱·PTT冷（例行報導）</div></div>
+  <div class="sc"><div class="n" style="color:var(--cold)">38</div><div class="l">─ 冷門</div></div>
+</div>
+
+<div class="wc-card">
+  <h3>☁️ 題材文字雲（字體大小 = 綜合熱門分）</h3>
+  <canvas id="wordCloudCanvas"></canvas>
+</div>
+
+<div class="charts">
+  <div class="cc"><h3>Top 20 — PTT vs 新聞熱度</h3><div class="cw"><canvas id="cBar"></canvas></div></div>
+  <div class="cc"><h3>Top 20 — 綜合熱門分（PTT 60% + 新聞 40%）</h3><div class="cw"><canvas id="cHBar"></canvas></div></div>
+</div>
+
+<p class="sec">📊 完整題材列表</p>
+<div class="leg">
+  <span><span class="dot" style="background:var(--ptt)"></span>PTT熱度（0-100）</span>
+  <span><span class="dot" style="background:var(--news)"></span>新聞熱度（相對值 0-100）</span>
+  <span><span class="dot" style="background:var(--acc)"></span>綜合分</span>
+</div>
+<table>
+  <thead><tr><th>分類</th><th>題材</th><th>PTT熱度</th><th>新聞熱度</th><th>綜合分</th></tr></thead>
+  <tbody>
+      <tr>
+        <td><span class="badge badge-hot">🔥🔥 雙熱門</span></td>
+        <td class="kw">台積電</td>
+        <td><div class="bar-wrap"><div class="bar bar-p" style="width:100%"></div></div><small>100.0</small></td>
+        <td><div class="bar-wrap"><div class="bar bar-n" style="width:35%"></div></div><small>47</small></td>
+        <td class="comb">73.9</td>
+      </tr>
+      <tr>
+        <td><span class="badge badge-hot">🔥🔥 雙熱門</span></td>
+        <td class="kw">半導體</td>
+        <td><div class="bar-wrap"><div class="bar bar-p" style="width:56%"></div></div><small>55.8</small></td>
+        <td><div class="bar-wrap"><div class="bar bar-n" style="width:100%"></div></div><small>135</small></td>
+        <td class="comb">73.5</td>
+      </tr>
+      <tr>
+        <td><span class="badge badge-hot">🔥🔥 雙熱門</span></td>
+        <td class="kw">生技</td>
+        <td><div class="bar-wrap"><div class="bar bar-p" style="width:55%"></div></div><small>54.7</small></td>
+        <td><div class="bar-wrap"><div class="bar bar-n" style="width:50%"></div></div><small>67</small></td>
+        <td class="comb">52.7</td>
+      </tr>
+      <tr>
+        <td><span class="badge badge-hot">🔥🔥 雙熱門</span></td>
+        <td class="kw">金融股</td>
+        <td><div class="bar-wrap"><div class="bar bar-p" style="width:62%"></div></div><small>62.0</small></td>
+        <td><div class="bar-wrap"><div class="bar bar-n" style="width:16%"></div></div><small>22</small></td>
+        <td class="comb">43.7</td>
+      </tr>
+      <tr>
+        <td><span class="badge badge-hot">🔥🔥 雙熱門</span></td>
+        <td class="kw">先進封裝</td>
+        <td><div class="bar-wrap"><div class="bar bar-p" style="width:29%"></div></div><small>29.1</small></td>
+        <td><div class="bar-wrap"><div class="bar bar-n" style="width:12%"></div></div><small>16</small></td>
+        <td class="comb">22.2</td>
+      </tr>
+      <tr>
+        <td><span class="badge badge-ptt">⚠️ PTT熱‧媒體冷</span></td>
+        <td class="kw">風電</td>
+        <td><div class="bar-wrap"><div class="bar bar-p" style="width:35%"></div></div><small>35.3</small></td>
+        <td><div class="bar-wrap"><div class="bar bar-n" style="width:0%"></div></div><small>0</small></td>
+        <td class="comb">21.2</td>
+      </tr>
+      <tr>
+        <td><span class="badge badge-ptt">⚠️ PTT熱‧媒體冷</span></td>
+        <td class="kw">投信買超</td>
+        <td><div class="bar-wrap"><div class="bar bar-p" style="width:8%"></div></div><small>7.8</small></td>
+        <td><div class="bar-wrap"><div class="bar bar-n" style="width:1%"></div></div><small>2</small></td>
+        <td class="comb">5.3</td>
+      </tr>
+      <tr>
+        <td><span class="badge badge-news">📰 媒體熱‧PTT冷</span></td>
+        <td class="kw">AI</td>
+        <td><div class="bar-wrap"><div class="bar bar-p" style="width:0%"></div></div><small>0.0</small></td>
+        <td><div class="bar-wrap"><div class="bar bar-n" style="width:89%"></div></div><small>120</small></td>
+        <td class="comb">35.6</td>
+      </tr>
+      <tr>
+        <td><span class="badge badge-news">📰 媒體熱‧PTT冷</span></td>
+        <td class="kw">記憶體</td>
+        <td><div class="bar-wrap"><div class="bar bar-p" style="width:0%"></div></div><small>0.0</small></td>
+        <td><div class="bar-wrap"><div class="bar bar-n" style="width:27%"></div></div><small>37</small></td>
+        <td class="comb">11.0</td>
+      </tr>
+      <tr>
+        <td><span class="badge badge-news">📰 媒體熱‧PTT冷</span></td>
+        <td class="kw">綠能</td>
+        <td><div class="bar-wrap"><div class="bar bar-p" style="width:0%"></div></div><small>0.0</small></td>
+        <td><div class="bar-wrap"><div class="bar bar-n" style="width:26%"></div></div><small>35</small></td>
+        <td class="comb">10.4</td>
+      </tr>
+      <tr>
+        <td><span class="badge badge-news">📰 媒體熱‧PTT冷</span></td>
+        <td class="kw">新藥</td>
+        <td><div class="bar-wrap"><div class="bar bar-p" style="width:0%"></div></div><small>0.0</small></td>
+        <td><div class="bar-wrap"><div class="bar bar-n" style="width:16%"></div></div><small>22</small></td>
+        <td class="comb">6.5</td>
+      </tr>
+      <tr>
+        <td><span class="badge badge-news">📰 媒體熱‧PTT冷</span></td>
+        <td class="kw">美元</td>
+        <td><div class="bar-wrap"><div class="bar bar-p" style="width:0%"></div></div><small>0.0</small></td>
+        <td><div class="bar-wrap"><div class="bar bar-n" style="width:13%"></div></div><small>18</small></td>
+        <td class="comb">5.3</td>
+      </tr>
+      <tr>
+        <td><span class="badge badge-news">📰 媒體熱‧PTT冷</span></td>
+        <td class="kw">輝達</td>
+        <td><div class="bar-wrap"><div class="bar bar-p" style="width:0%"></div></div><small>0.0</small></td>
+        <td><div class="bar-wrap"><div class="bar bar-n" style="width:13%"></div></div><small>18</small></td>
+        <td class="comb">5.3</td>
+      </tr>
+      <tr>
+        <td><span class="badge badge-news">📰 媒體熱‧PTT冷</span></td>
+        <td class="kw">衛星</td>
+        <td><div class="bar-wrap"><div class="bar bar-p" style="width:0%"></div></div><small>0.0</small></td>
+        <td><div class="bar-wrap"><div class="bar bar-n" style="width:13%"></div></div><small>17</small></td>
+        <td class="comb">5.0</td>
+      </tr>
+      <tr>
+        <td><span class="badge badge-news">📰 媒體熱‧PTT冷</span></td>
+        <td class="kw">融資</td>
+        <td><div class="bar-wrap"><div class="bar bar-p" style="width:0%"></div></div><small>0.0</small></td>
+        <td><div class="bar-wrap"><div class="bar bar-n" style="width:13%"></div></div><small>17</small></td>
+        <td class="comb">5.0</td>
+      </tr>
+      <tr>
+        <td><span class="badge badge-news">📰 媒體熱‧PTT冷</span></td>
+        <td class="kw">雲端</td>
+        <td><div class="bar-wrap"><div class="bar bar-p" style="width:0%"></div></div><small>0.0</small></td>
+        <td><div class="bar-wrap"><div class="bar bar-n" style="width:12%"></div></div><small>16</small></td>
+        <td class="comb">4.7</td>
+      </tr>
+      <tr>
+        <td><span class="badge badge-news">📰 媒體熱‧PTT冷</span></td>
+        <td class="kw">鋼鐵</td>
+        <td><div class="bar-wrap"><div class="bar bar-p" style="width:0%"></div></div><small>0.0</small></td>
+        <td><div class="bar-wrap"><div class="bar bar-n" style="width:10%"></div></div><small>14</small></td>
+        <td class="comb">4.1</td>
+      </tr>
+      <tr>
+        <td><span class="badge badge-news">📰 媒體熱‧PTT冷</span></td>
+        <td class="kw">伺服器</td>
+        <td><div class="bar-wrap"><div class="bar bar-p" style="width:0%"></div></div><small>0.0</small></td>
+        <td><div class="bar-wrap"><div class="bar bar-n" style="width:10%"></div></div><small>13</small></td>
+        <td class="comb">3.9</td>
+      </tr>
+      <tr>
+        <td><span class="badge badge-news">📰 媒體熱‧PTT冷</span></td>
+        <td class="kw">網通</td>
+        <td><div class="bar-wrap"><div class="bar bar-p" style="width:0%"></div></div><small>0.0</small></td>
+        <td><div class="bar-wrap"><div class="bar bar-n" style="width:10%"></div></div><small>13</small></td>
+        <td class="comb">3.9</td>
+      </tr>
+      <tr>
+        <td><span class="badge badge-news">📰 媒體熱‧PTT冷</span></td>
+        <td class="kw">光通訊</td>
+        <td><div class="bar-wrap"><div class="bar bar-p" style="width:0%"></div></div><small>0.0</small></td>
+        <td><div class="bar-wrap"><div class="bar bar-n" style="width:8%"></div></div><small>11</small></td>
+        <td class="comb">3.3</td>
+      </tr>
+      <tr>
+        <td><span class="badge badge-news">📰 媒體熱‧PTT冷</span></td>
+        <td class="kw">外資買超</td>
+        <td><div class="bar-wrap"><div class="bar bar-p" style="width:0%"></div></div><small>0.0</small></td>
+        <td><div class="bar-wrap"><div class="bar bar-n" style="width:7%"></div></div><small>10</small></td>
+        <td class="comb">3.0</td>
+      </tr>
+      <tr>
+        <td><span class="badge badge-news">📰 媒體熱‧PTT冷</span></td>
+        <td class="kw">機器人</td>
+        <td><div class="bar-wrap"><div class="bar bar-p" style="width:0%"></div></div><small>0.0</small></td>
+        <td><div class="bar-wrap"><div class="bar bar-n" style="width:7%"></div></div><small>9</small></td>
+        <td class="comb">2.7</td>
+      </tr>
+      <tr>
+        <td><span class="badge badge-news">📰 媒體熱‧PTT冷</span></td>
+        <td class="kw">晶圓</td>
+        <td><div class="bar-wrap"><div class="bar bar-p" style="width:0%"></div></div><small>0.0</small></td>
+        <td><div class="bar-wrap"><div class="bar bar-n" style="width:7%"></div></div><small>9</small></td>
+        <td class="comb">2.7</td>
+      </tr>
+      <tr>
+        <td><span class="badge badge-cold">─ 冷門</span></td>
+        <td class="kw">ASIC</td>
+        <td><div class="bar-wrap"><div class="bar bar-p" style="width:0%"></div></div><small>0.0</small></td>
+        <td><div class="bar-wrap"><div class="bar bar-n" style="width:6%"></div></div><small>8</small></td>
+        <td class="comb">2.4</td>
+      </tr>
+      <tr>
+        <td><span class="badge badge-cold">─ 冷門</span></td>
+        <td class="kw">航運</td>
+        <td><div class="bar-wrap"><div class="bar bar-p" style="width:0%"></div></div><small>0.0</small></td>
+        <td><div class="bar-wrap"><div class="bar bar-n" style="width:5%"></div></div><small>7</small></td>
+        <td class="comb">2.1</td>
+      </tr>
+      <tr>
+        <td><span class="badge badge-cold">─ 冷門</span></td>
+        <td class="kw">矽光子</td>
+        <td><div class="bar-wrap"><div class="bar bar-p" style="width:0%"></div></div><small>0.0</small></td>
+        <td><div class="bar-wrap"><div class="bar bar-n" style="width:4%"></div></div><small>6</small></td>
+        <td class="comb">1.8</td>
+      </tr>
+      <tr>
+        <td><span class="badge badge-cold">─ 冷門</span></td>
+        <td class="kw">PCB</td>
+        <td><div class="bar-wrap"><div class="bar bar-p" style="width:0%"></div></div><small>0.0</small></td>
+        <td><div class="bar-wrap"><div class="bar bar-n" style="width:4%"></div></div><small>5</small></td>
+        <td class="comb">1.5</td>
+      </tr>
+      <tr>
+        <td><span class="badge badge-cold">─ 冷門</span></td>
+        <td class="kw">車用</td>
+        <td><div class="bar-wrap"><div class="bar bar-p" style="width:0%"></div></div><small>0.0</small></td>
+        <td><div class="bar-wrap"><div class="bar bar-n" style="width:4%"></div></div><small>5</small></td>
+        <td class="comb">1.5</td>
+      </tr>
+      <tr>
+        <td><span class="badge badge-cold">─ 冷門</span></td>
+        <td class="kw">資料中心</td>
+        <td><div class="bar-wrap"><div class="bar bar-p" style="width:0%"></div></div><small>0.0</small></td>
+        <td><div class="bar-wrap"><div class="bar bar-n" style="width:3%"></div></div><small>4</small></td>
+        <td class="comb">1.2</td>
+      </tr>
+      <tr>
+        <td><span class="badge badge-cold">─ 冷門</span></td>
+        <td class="kw">液冷</td>
+        <td><div class="bar-wrap"><div class="bar bar-p" style="width:0%"></div></div><small>0.0</small></td>
+        <td><div class="bar-wrap"><div class="bar bar-n" style="width:3%"></div></div><small>4</small></td>
+        <td class="comb">1.2</td>
+      </tr>
+      <tr>
+        <td><span class="badge badge-cold">─ 冷門</span></td>
+        <td class="kw">電動車</td>
+        <td><div class="bar-wrap"><div class="bar bar-p" style="width:0%"></div></div><small>0.0</small></td>
+        <td><div class="bar-wrap"><div class="bar bar-n" style="width:3%"></div></div><small>4</small></td>
+        <td class="comb">1.2</td>
+      </tr>
+      <tr>
+        <td><span class="badge badge-cold">─ 冷門</span></td>
+        <td class="kw">銅</td>
+        <td><div class="bar-wrap"><div class="bar bar-p" style="width:0%"></div></div><small>0.0</small></td>
+        <td><div class="bar-wrap"><div class="bar bar-n" style="width:3%"></div></div><small>4</small></td>
+        <td class="comb">1.2</td>
+      </tr>
+      <tr>
+        <td><span class="badge badge-cold">─ 冷門</span></td>
+        <td class="kw">太陽能</td>
+        <td><div class="bar-wrap"><div class="bar bar-p" style="width:0%"></div></div><small>0.0</small></td>
+        <td><div class="bar-wrap"><div class="bar bar-n" style="width:2%"></div></div><small>3</small></td>
+        <td class="comb">0.9</td>
+      </tr>
+      <tr>
+        <td><span class="badge badge-cold">─ 冷門</span></td>
+        <td class="kw">散熱</td>
+        <td><div class="bar-wrap"><div class="bar bar-p" style="width:0%"></div></div><small>0.0</small></td>
+        <td><div class="bar-wrap"><div class="bar bar-n" style="width:1%"></div></div><small>2</small></td>
+        <td class="comb">0.6</td>
+      </tr>
+      <tr>
+        <td><span class="badge badge-cold">─ 冷門</span></td>
+        <td class="kw">儲能</td>
+        <td><div class="bar-wrap"><div class="bar bar-p" style="width:0%"></div></div><small>0.0</small></td>
+        <td><div class="bar-wrap"><div class="bar bar-n" style="width:1%"></div></div><small>2</small></td>
+        <td class="comb">0.6</td>
+      </tr>
+      <tr>
+        <td><span class="badge badge-cold">─ 冷門</span></td>
+        <td class="kw">電池</td>
+        <td><div class="bar-wrap"><div class="bar bar-p" style="width:0%"></div></div><small>0.0</small></td>
+        <td><div class="bar-wrap"><div class="bar bar-n" style="width:1%"></div></div><small>2</small></td>
+        <td class="comb">0.6</td>
+      </tr>
+      <tr>
+        <td><span class="badge badge-cold">─ 冷門</span></td>
+        <td class="kw">醫療器材</td>
+        <td><div class="bar-wrap"><div class="bar bar-p" style="width:0%"></div></div><small>0.0</small></td>
+        <td><div class="bar-wrap"><div class="bar bar-n" style="width:1%"></div></div><small>2</small></td>
+        <td class="comb">0.6</td>
+      </tr>
+      <tr>
+        <td><span class="badge badge-cold">─ 冷門</span></td>
+        <td class="kw">iPhone</td>
+        <td><div class="bar-wrap"><div class="bar bar-p" style="width:0%"></div></div><small>0.0</small></td>
+        <td><div class="bar-wrap"><div class="bar bar-n" style="width:1%"></div></div><small>2</small></td>
+        <td class="comb">0.6</td>
+      </tr>
+      <tr>
+        <td><span class="badge badge-cold">─ 冷門</span></td>
+        <td class="kw">軍工</td>
+        <td><div class="bar-wrap"><div class="bar bar-p" style="width:0%"></div></div><small>0.0</small></td>
+        <td><div class="bar-wrap"><div class="bar bar-n" style="width:1%"></div></div><small>2</small></td>
+        <td class="comb">0.6</td>
+      </tr>
+      <tr>
+        <td><span class="badge badge-cold">─ 冷門</span></td>
+        <td class="kw">DRAM</td>
+        <td><div class="bar-wrap"><div class="bar bar-p" style="width:0%"></div></div><small>0.0</small></td>
+        <td><div class="bar-wrap"><div class="bar bar-n" style="width:1%"></div></div><small>1</small></td>
+        <td class="comb">0.3</td>
+      </tr>
+      <tr>
+        <td><span class="badge badge-cold">─ 冷門</span></td>
+        <td class="kw">升息</td>
+        <td><div class="bar-wrap"><div class="bar bar-p" style="width:0%"></div></div><small>0.0</small></td>
+        <td><div class="bar-wrap"><div class="bar bar-n" style="width:1%"></div></div><small>1</small></td>
+        <td class="comb">0.3</td>
+      </tr>
+      <tr>
+        <td><span class="badge badge-cold">─ 冷門</span></td>
+        <td class="kw">6G</td>
+        <td><div class="bar-wrap"><div class="bar bar-p" style="width:0%"></div></div><small>0.0</small></td>
+        <td><div class="bar-wrap"><div class="bar bar-n" style="width:1%"></div></div><small>1</small></td>
+        <td class="comb">0.3</td>
+      </tr>
+      <tr>
+        <td><span class="badge badge-cold">─ 冷門</span></td>
+        <td class="kw">電競</td>
+        <td><div class="bar-wrap"><div class="bar bar-p" style="width:0%"></div></div><small>0.0</small></td>
+        <td><div class="bar-wrap"><div class="bar bar-n" style="width:1%"></div></div><small>1</small></td>
+        <td class="comb">0.3</td>
+      </tr>
+      <tr>
+        <td><span class="badge badge-cold">─ 冷門</span></td>
+        <td class="kw">海運</td>
+        <td><div class="bar-wrap"><div class="bar bar-p" style="width:0%"></div></div><small>0.0</small></td>
+        <td><div class="bar-wrap"><div class="bar bar-n" style="width:1%"></div></div><small>1</small></td>
+        <td class="comb">0.3</td>
+      </tr>
+      <tr>
+        <td><span class="badge badge-cold">─ 冷門</span></td>
+        <td class="kw">人工智慧</td>
+        <td><div class="bar-wrap"><div class="bar bar-p" style="width:0%"></div></div><small>0.0</small></td>
+        <td><div class="bar-wrap"><div class="bar bar-n" style="width:0%"></div></div><small>0</small></td>
+        <td class="comb">0.0</td>
+      </tr>
+      <tr>
+        <td><span class="badge badge-cold">─ 冷門</span></td>
+        <td class="kw">HBM</td>
+        <td><div class="bar-wrap"><div class="bar bar-p" style="width:0%"></div></div><small>0.0</small></td>
+        <td><div class="bar-wrap"><div class="bar bar-n" style="width:0%"></div></div><small>0</small></td>
+        <td class="comb">0.0</td>
+      </tr>
+      <tr>
+        <td><span class="badge badge-cold">─ 冷門</span></td>
+        <td class="kw">CoWoS</td>
+        <td><div class="bar-wrap"><div class="bar bar-p" style="width:0%"></div></div><small>0.0</small></td>
+        <td><div class="bar-wrap"><div class="bar bar-n" style="width:0%"></div></div><small>0</small></td>
+        <td class="comb">0.0</td>
+      </tr>
+      <tr>
+        <td><span class="badge badge-cold">─ 冷門</span></td>
+        <td class="kw">特斯拉</td>
+        <td><div class="bar-wrap"><div class="bar bar-p" style="width:0%"></div></div><small>0.0</small></td>
+        <td><div class="bar-wrap"><div class="bar bar-n" style="width:0%"></div></div><small>0</small></td>
+        <td class="comb">0.0</td>
+      </tr>
+      <tr>
+        <td><span class="badge badge-cold">─ 冷門</span></td>
+        <td class="kw">ADAS</td>
+        <td><div class="bar-wrap"><div class="bar bar-p" style="width:0%"></div></div><small>0.0</small></td>
+        <td><div class="bar-wrap"><div class="bar bar-n" style="width:0%"></div></div><small>0</small></td>
+        <td class="comb">0.0</td>
+      </tr>
+      <tr>
+        <td><span class="badge badge-cold">─ 冷門</span></td>
+        <td class="kw">自駕</td>
+        <td><div class="bar-wrap"><div class="bar bar-p" style="width:0%"></div></div><small>0.0</small></td>
+        <td><div class="bar-wrap"><div class="bar bar-n" style="width:0%"></div></div><small>0</small></td>
+        <td class="comb">0.0</td>
+      </tr>
+      <tr>
+        <td><span class="badge badge-cold">─ 冷門</span></td>
+        <td class="kw">交換器</td>
+        <td><div class="bar-wrap"><div class="bar bar-p" style="width:0%"></div></div><small>0.0</small></td>
+        <td><div class="bar-wrap"><div class="bar bar-n" style="width:0%"></div></div><small>0</small></td>
+        <td class="comb">0.0</td>
+      </tr>
+      <tr>
+        <td><span class="badge badge-cold">─ 冷門</span></td>
+        <td class="kw">路由器</td>
+        <td><div class="bar-wrap"><div class="bar bar-p" style="width:0%"></div></div><small>0.0</small></td>
+        <td><div class="bar-wrap"><div class="bar bar-n" style="width:0%"></div></div><small>0</small></td>
+        <td class="comb">0.0</td>
+      </tr>
+      <tr>
+        <td><span class="badge badge-cold">─ 冷門</span></td>
+        <td class="kw">癌症</td>
+        <td><div class="bar-wrap"><div class="bar bar-p" style="width:0%"></div></div><small>0.0</small></td>
+        <td><div class="bar-wrap"><div class="bar bar-n" style="width:0%"></div></div><small>0</small></td>
+        <td class="comb">0.0</td>
+      </tr>
+      <tr>
+        <td><span class="badge badge-cold">─ 冷門</span></td>
+        <td class="kw">減重藥</td>
+        <td><div class="bar-wrap"><div class="bar bar-p" style="width:0%"></div></div><small>0.0</small></td>
+        <td><div class="bar-wrap"><div class="bar bar-n" style="width:0%"></div></div><small>0</small></td>
+        <td class="comb">0.0</td>
+      </tr>
+      <tr>
+        <td><span class="badge badge-cold">─ 冷門</span></td>
+        <td class="kw">壽險</td>
+        <td><div class="bar-wrap"><div class="bar bar-p" style="width:0%"></div></div><small>0.0</small></td>
+        <td><div class="bar-wrap"><div class="bar bar-n" style="width:0%"></div></div><small>0</small></td>
+        <td class="comb">0.0</td>
+      </tr>
+      <tr>
+        <td><span class="badge badge-cold">─ 冷門</span></td>
+        <td class="kw">蘋果概念</td>
+        <td><div class="bar-wrap"><div class="bar bar-p" style="width:0%"></div></div><small>0.0</small></td>
+        <td><div class="bar-wrap"><div class="bar bar-n" style="width:0%"></div></div><small>0</small></td>
+        <td class="comb">0.0</td>
+      </tr>
+      <tr>
+        <td><span class="badge badge-cold">─ 冷門</span></td>
+        <td class="kw">穿戴</td>
+        <td><div class="bar-wrap"><div class="bar bar-p" style="width:0%"></div></div><small>0.0</small></td>
+        <td><div class="bar-wrap"><div class="bar bar-n" style="width:0%"></div></div><small>0</small></td>
+        <td class="comb">0.0</td>
+      </tr>
+      <tr>
+        <td><span class="badge badge-cold">─ 冷門</span></td>
+        <td class="kw">遊戲</td>
+        <td><div class="bar-wrap"><div class="bar bar-p" style="width:0%"></div></div><small>0.0</small></td>
+        <td><div class="bar-wrap"><div class="bar bar-n" style="width:0%"></div></div><small>0</small></td>
+        <td class="comb">0.0</td>
+      </tr>
+      <tr>
+        <td><span class="badge badge-cold">─ 冷門</span></td>
+        <td class="kw">元宇宙</td>
+        <td><div class="bar-wrap"><div class="bar bar-p" style="width:0%"></div></div><small>0.0</small></td>
+        <td><div class="bar-wrap"><div class="bar bar-n" style="width:0%"></div></div><small>0</small></td>
+        <td class="comb">0.0</td>
+      </tr>
+      <tr>
+        <td><span class="badge badge-cold">─ 冷門</span></td>
+        <td class="kw">原物料</td>
+        <td><div class="bar-wrap"><div class="bar bar-p" style="width:0%"></div></div><small>0.0</small></td>
+        <td><div class="bar-wrap"><div class="bar bar-n" style="width:0%"></div></div><small>0</small></td>
+        <td class="comb">0.0</td>
+      </tr>
+      <tr>
+        <td><span class="badge badge-cold">─ 冷門</span></td>
+        <td class="kw">加權指數</td>
+        <td><div class="bar-wrap"><div class="bar bar-p" style="width:0%"></div></div><small>0.0</small></td>
+        <td><div class="bar-wrap"><div class="bar bar-n" style="width:0%"></div></div><small>0</small></td>
+        <td class="comb">0.0</td>
+      </tr></tbody>
+</table>
+
+<script>
+const L=["台積電", "半導體", "生技", "金融股", "AI", "先進封裝", "風電", "記憶體", "綠能", "新藥", "美元", "輝達", "投信買超", "衛星", "融資", "雲端", "鋼鐵", "伺服器", "網通", "光通訊"],P=[100.0, 55.8, 54.7, 62.0, 0.0, 29.1, 35.3, 0.0, 0.0, 0.0, 0.0, 0.0, 7.8, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],N=[34.8, 100.0, 49.6, 16.3, 88.9, 11.9, 0.0, 27.4, 25.9, 16.3, 13.3, 13.3, 1.5, 12.6, 12.6, 11.9, 10.4, 9.6, 9.6, 8.1],C=[73.9, 73.5, 52.7, 43.7, 35.6, 22.2, 21.2, 11.0, 10.4, 6.5, 5.3, 5.3, 5.3, 5.0, 5.0, 4.7, 4.1, 3.9, 3.9, 3.3];
+const gc={color:'#718096'},grid={color:'#2a2d3a'};
+new Chart(document.getElementById('cBar'),{
+  type:'bar',
+  data:{labels:L,datasets:[
+    {label:'PTT熱度',data:P,backgroundColor:'rgba(255,169,77,0.7)',borderRadius:4},
+    {label:'新聞熱度',data:N,backgroundColor:'rgba(81,207,102,0.7)',borderRadius:4},
+  ]},
+  options:{responsive:true,maintainAspectRatio:false,
+    plugins:{legend:{labels:{color:'#e2e8f0'}}},
+    scales:{
+      x:{ticks:{...gc,maxRotation:45},grid},
+      y:{ticks:gc,grid,max:100},
+    }
+  }
+});
+new Chart(document.getElementById('cHBar'),{
+  type:'bar',
+  data:{labels:L,datasets:[{
+    label:'綜合分',data:C,
+    backgroundColor:L.map((_,i)=>`hsla(${200+i*8},70%,60%,0.75)`),
+    borderRadius:4
+  }]},
+  options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,
+    plugins:{legend:{display:false}},
+    scales:{
+      x:{ticks:gc,grid,max:100},
+      y:{ticks:{...gc,color:'#e2e8f0',font:{size:11}},grid},
+    }
+  }
+});
+// Word Cloud
+const wcCanvas = document.getElementById('wordCloudCanvas');
+wcCanvas.width = wcCanvas.parentElement.offsetWidth - 36;
+wcCanvas.height = 350;
+const wcData = [["台積電", 73.9], ["半導體", 73.5], ["生技", 52.7], ["金融股", 43.7], ["AI", 35.6], ["先進封裝", 22.2], ["風電", 21.2], ["記憶體", 11.0], ["綠能", 10.4], ["新藥", 6.5], ["美元", 5.3], ["輝達", 5.3], ["投信買超", 5.3], ["衛星", 5.0], ["融資", 5.0], ["雲端", 4.7], ["鋼鐵", 4.1], ["伺服器", 3.9], ["網通", 3.9], ["光通訊", 3.3], ["外資買超", 3.0], ["機器人", 3], ["晶圓", 3], ["ASIC", 3], ["航運", 3], ["矽光子", 3], ["PCB", 3], ["車用", 3], ["資料中心", 3], ["液冷", 3], ["電動車", 3], ["銅", 3], ["太陽能", 3], ["散熱", 3], ["儲能", 3], ["電池", 3], ["醫療器材", 3], ["iPhone", 3], ["軍工", 3], ["DRAM", 3], ["升息", 3], ["6G", 3], ["電競", 3], ["海運", 3]];
+const maxWc = Math.max(...wcData.map(d=>d[1]));
+const colorPalette = ['#ff6b6b','#ffa94d','#ffd43b','#51cf66','#22b8cf','#6c63ff','#cc5de8','#f093fb'];
+WordCloud(wcCanvas, {
+  list: wcData.map(d=>[d[0], d[1] / maxWc * 60 + 12]),
+  fontFamily: "'Microsoft JhengHei','Segoe UI',sans-serif",
+  color: () => colorPalette[Math.floor(Math.random()*colorPalette.length)],
+  backgroundColor: 'transparent',
+  rotateRatio: 0.3,
+  minRotation: -0.3,
+  maxRotation: 0.3,
+  gridSize: 8,
+  weightFactor: 1,
+  shuffle: true,
+});
+</script>
+</body>
+</html>

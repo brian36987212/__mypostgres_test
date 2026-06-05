@@ -75,12 +75,25 @@ async def main():
     
     semaphore = asyncio.Semaphore(MAX_CONCURRENCY)
     total_news = 0
+    failed_count = 0
+    MAX_CONSECUTIVE_FAIL = 10
     start_time = time.time()
     
     async with AsyncSession() as session:
         for i, stock_id in enumerate(remaining, 1):
             print(f"[{i}/{len(remaining)}] 處理 {stock_id}...")
             news_list = await fetch_stock_news(session, stock_id, semaphore, DAYS_FILTER)
+            
+            if news_list is None:
+                failed_count += 1
+                print(f"  [WARN] 連線失敗，跳過不記錄進度 (連續失敗: {failed_count})")
+                if failed_count >= MAX_CONSECUTIVE_FAIL:
+                    print(f"\n[ABORT] 連續失敗 {failed_count} 次，疑似網站無法連線，提前結束")
+                    break
+                await asyncio.sleep(5)
+                continue
+            
+            failed_count = 0
             if news_list:
                 saved = await save_news_to_db(pool, news_list)
                 total_news += saved

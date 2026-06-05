@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AI 題材分析報告</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<script src="https://cdn.jsdelivr.net/npm/wordcloud@1.2.2/src/wordcloud2.min.js"></script>
+<style>
+:root{--bg:#0f1117;--card:#1a1d27;--bd:#2a2d3a;--tx:#e2e8f0;--mu:#718096;--acc:#6c63ff}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--tx);font-family:'Microsoft JhengHei','Segoe UI',sans-serif;padding:24px}
+h1{font-size:1.8rem;background:linear-gradient(90deg,#6c63ff,#f093fb);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:4px}
+.sub{color:var(--mu);font-size:.85rem;margin-bottom:24px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:20px;margin-bottom:20px}
+.card h3{color:var(--mu);font-size:.9rem;margin-bottom:14px}
+#wc{width:100%;height:350px}
+.charts{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px}
+.cw{position:relative;height:320px}
+table{width:100%;border-collapse:collapse;background:var(--card);border-radius:12px;overflow:hidden;border:1px solid var(--bd)}
+thead th{background:#12151f;color:var(--mu);font-size:.78rem;text-transform:uppercase;padding:10px 14px;text-align:left}
+tbody tr{border-top:1px solid var(--bd);transition:background .15s}
+tbody tr:hover{background:#1e2130}
+td{padding:10px 14px;font-size:.88rem}
+.kw{font-weight:600}
+.bar-w{background:#2a2d3a;border-radius:3px;height:6px;width:120px;overflow:hidden}
+.bar{height:100%;border-radius:3px;background:linear-gradient(90deg,#6c63ff,#f093fb)}
+.sent-pos{color:#51cf66;font-weight:600}
+.sent-neg{color:#ff6b6b;font-weight:600}
+.sent-neu{color:#ffa94d}
+.sec{font-size:1.05rem;font-weight:600;margin:20px 0 10px}
+@media(max-width:700px){.charts{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<h1>🤖 AI 題材分析報告</h1>
+<p class="sub">AI 自動從新聞標記主題 → 聚合統計 → 熱度排行 ｜ 測試版（20 篇樣本）</p>
+
+<div class="card">
+  <h3>☁️ 題材文字雲（字體大小 = 出現次數）</h3>
+  <canvas id="wc"></canvas>
+</div>
+
+<div class="charts">
+  <div class="card"><h3>📊 題材新聞數量</h3><div class="cw"><canvas id="cBar"></canvas></div></div>
+  <div class="card"><h3>💡 題材平均情緒</h3><div class="cw"><canvas id="cSent"></canvas></div></div>
+</div>
+
+<p class="sec">📋 完整題材列表（共 29 個主題）</p>
+<table>
+  <thead><tr><th>#</th><th>題材</th><th>新聞數</th><th>熱度</th><th>平均情緒</th></tr></thead>
+  <tbody>
+      <tr>
+        <td>1</td>
+        <td class="kw">半導體</td>
+        <td>10</td>
+        <td><div class="bar-w"><div class="bar" style="width:100%"></div></div></td>
+        <td class="sent-neu">🟡 5.9</td>
+      </tr>
+      <tr>
+        <td>2</td>
+        <td class="kw">綠能</td>
+        <td>4</td>
+        <td><div class="bar-w"><div class="bar" style="width:40%"></div></div></td>
+        <td class="sent-neu">🟡 5.8</td>
+      </tr>
+      <tr>
+        <td>3</td>
+        <td class="kw">金融</td>
+        <td>3</td>
+        <td><div class="bar-w"><div class="bar" style="width:30%"></div></div></td>
+        <td class="sent-pos">🟢 7.0</td>
+      </tr>
+      <tr>
+        <td>4</td>
+        <td class="kw">電子產業</td>
+        <td>2</td>
+        <td><div class="bar-w"><div class="bar" style="width:20%"></div></div></td>
+        <td class="sent-neu">🟡 5.5</td>
+      </tr>
+      <tr>
+        <td>5</td>
+        <td class="kw">網通</td>
+        <td>2</td>
+        <td><div class="bar-w"><div class="bar" style="width:20%"></div></div></td>
+        <td class="sent-pos">🟢 8.0</td>
+      </tr>
+      <tr>
+        <td>6</td>
+        <td class="kw">房地產</td>
+        <td>2</td>
+        <td><div class="bar-w"><div class="bar" style="width:20%"></div></div></td>
+        <td class="sent-neu">🟡 5.0</td>
+      </tr>
+      <tr>
+        <td>7</td>
+        <td class="kw">自行車產業</td>
+        <td>1</td>
+        <td><div class="bar-w"><div class="bar" style="width:10%"></div></div></td>
+        <td class="sent-neg">🔴 2.0</td>
+      </tr>
+      <tr>
+        <td>8</td>
+        <td class="kw">財務狀況</td>
+        <td>1</td>
+        <td><div class="bar-w"><div class="bar" style="width:10%"></div></div></td>
+        <td class="sent-neg">🔴 2.0</td>
+      </tr>
+      <tr>
+        <td>9</td>
+        <td class="kw">產業周期</td>
+        <td>1</td>
+        <td><div class="bar-w"><div class="bar" style="width:10%"></div></div></td>
+        <td class="sent-neu">🟡 4.0</td>
+      </tr>
+      <tr>
+        <td>10</td>
+        <td class="kw">生產力</td>
+        <td>1</td>
+        <td><div class="bar-w"><div class="bar" style="width:10%"></div></div></td>
+        <td class="sent-neu">🟡 5.0</td>
+      </tr>
+      <tr>
+        <td>11</td>
+        <td class="kw">先進封裝</td>
+        <td>1</td>
+        <td><div class="bar-w"><div class="bar" style="width:10%"></div></div></td>
+        <td class="sent-neu">🟡 5.0</td>
+      </tr>
+      <tr>
+        <td>12</td>
+        <td class="kw">AI時代</td>
+        <td>1</td>
+        <td><div class="bar-w"><div class="bar" style="width:10%"></div></div></td>
+        <td class="sent-neu">🟡 5.0</td>
+      </tr>
+      <tr>
+        <td>13</td>
+        <td class="kw">晶片效能</td>
+        <td>1</td>
+        <td><div class="bar-w"><div class="bar" style="width:10%"></div></div></td>
+        <td class="sent-neu">🟡 5.0</td>
+      </tr>
+      <tr>
+        <td>14</td>
+        <td class="kw">供應鏈</td>
+        <td>1</td>
+        <td><div class="bar-w"><div class="bar" style="width:10%"></div></div></td>
+        <td class="sent-neu">🟡 5.0</td>
+      </tr>
+      <tr>
+        <td>15</td>
+        <td class="kw">產業變化</td>
+        <td>1</td>
+        <td><div class="bar-w"><div class="bar" style="width:10%"></div></div></td>
+        <td class="sent-neu">🟡 5.0</td>
+      </tr>
+      <tr>
+        <td>16</td>
+        <td class="kw">風險管理</td>
+        <td>1</td>
+        <td><div class="bar-w"><div class="bar" style="width:10%"></div></div></td>
+        <td class="sent-neu">🟡 5.0</td>
+      </tr>
+      <tr>
+        <td>17</td>
+        <td class="kw">投資策略</td>
+        <td>1</td>
+        <td><div class="bar-w"><div class="bar" style="width:10%"></div></div></td>
+        <td class="sent-neu">🟡 5.0</td>
+      </tr>
+      <tr>
+        <td>18</td>
+        <td class="kw">人形機器人</td>
+        <td>1</td>
+        <td><div class="bar-w"><div class="bar" style="width:10%"></div></div></td>
+        <td class="sent-pos">🟢 8.0</td>
+      </tr>
+      <tr>
+        <td>19</td>
+        <td class="kw">伺服器</td>
+        <td>1</td>
+        <td><div class="bar-w"><div class="bar" style="width:10%"></div></div></td>
+        <td class="sent-pos">🟢 8.0</td>
+      </tr>
+      <tr>
+        <td>20</td>
+        <td class="kw">AI伺服器</td>
+        <td>1</td>
+        <td><div class="bar-w"><div class="bar" style="width:10%"></div></div></td>
+        <td class="sent-pos">🟢 8.0</td>
+      </tr>
+      <tr>
+        <td>21</td>
+        <td class="kw">光學</td>
+        <td>1</td>
+        <td><div class="bar-w"><div class="bar" style="width:10%"></div></div></td>
+        <td class="sent-pos">🟢 8.0</td>
+      </tr>
+      <tr>
+        <td>22</td>
+        <td class="kw">基建</td>
+        <td>1</td>
+        <td><div class="bar-w"><div class="bar" style="width:10%"></div></div></td>
+        <td class="sent-pos">🟢 8.0</td>
+      </tr>
+      <tr>
+        <td>23</td>
+        <td class="kw">光通訊</td>
+        <td>1</td>
+        <td><div class="bar-w"><div class="bar" style="width:10%"></div></div></td>
+        <td class="sent-neu">🟡 5.0</td>
+      </tr>
+      <tr>
+        <td>24</td>
+        <td class="kw">AI</td>
+        <td>1</td>
+        <td><div class="bar-w"><div class="bar" style="width:10%"></div></div></td>
+        <td class="sent-neu">🟡 5.0</td>
+      </tr>
+      <tr>
+        <td>25</td>
+        <td class="kw">消費電子</td>
+        <td>1</td>
+        <td><div class="bar-w"><div class="bar" style="width:10%"></div></div></td>
+        <td class="sent-pos">🟢 8.0</td>
+      </tr>
+      <tr>
+        <td>26</td>
+        <td class="kw">生技</td>
+        <td>1</td>
+        <td><div class="bar-w"><div class="bar" style="width:10%"></div></div></td>
+        <td class="sent-pos">🟢 8.0</td>
+      </tr>
+      <tr>
+        <td>27</td>
+        <td class="kw">記憶體</td>
+        <td>1</td>
+        <td><div class="bar-w"><div class="bar" style="width:10%"></div></div></td>
+        <td class="sent-neg">🔴 1.0</td>
+      </tr>
+      <tr>
+        <td>28</td>
+        <td class="kw">股市</td>
+        <td>1</td>
+        <td><div class="bar-w"><div class="bar" style="width:10%"></div></div></td>
+        <td class="sent-neg">🔴 1.0</td>
+      </tr>
+      <tr>
+        <td>29</td>
+        <td class="kw">證券</td>
+        <td>1</td>
+        <td><div class="bar-w"><div class="bar" style="width:10%"></div></div></td>
+        <td class="sent-neu">🟡 5.0</td>
+      </tr></tbody>
+</table>
+
+<script>
+const gc={color:'#718096'},grid={color:'#2a2d3a'};
+const L=["半導體", "綠能", "金融", "電子產業", "網通", "房地產", "自行車產業", "財務狀況", "產業周期", "生產力", "先進封裝", "AI時代", "晶片效能", "供應鏈", "產業變化", "風險管理", "投資策略", "人形機器人", "伺服器", "AI伺服器", "光學", "基建", "光通訊", "AI", "消費電子"];
+
+// Bar chart
+new Chart(document.getElementById('cBar'),{
+  type:'bar',
+  data:{labels:L,datasets:[{
+    label:'新聞數',data:[10, 4, 3, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+    backgroundColor:L.map((_,i)=>`hsla(${200+i*12},70%,60%,0.75)`),borderRadius:4
+  }]},
+  options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,
+    plugins:{legend:{display:false}},
+    scales:{x:{ticks:gc,grid},y:{ticks:{...gc,color:'#e2e8f0',font:{size:11}},grid}}
+  }
+});
+
+// Sentiment chart
+new Chart(document.getElementById('cSent'),{
+  type:'bar',
+  data:{labels:L,datasets:[{
+    label:'平均情緒',data:[5.9, 5.8, 7.0, 5.5, 8.0, 5.0, 2.0, 2.0, 4.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 8.0, 8.0, 8.0, 8.0, 8.0, 5.0, 5.0, 8.0],
+    backgroundColor:[5.9, 5.8, 7.0, 5.5, 8.0, 5.0, 2.0, 2.0, 4.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 8.0, 8.0, 8.0, 8.0, 8.0, 5.0, 5.0, 8.0].map(v=>v>=7?'rgba(81,207,102,0.7)':v<=3?'rgba(255,107,107,0.7)':'rgba(255,169,77,0.7)'),
+    borderRadius:4
+  }]},
+  options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,
+    plugins:{legend:{display:false}},
+    scales:{x:{ticks:gc,grid,min:1,max:9},y:{ticks:{...gc,color:'#e2e8f0',font:{size:11}},grid}}
+  }
+});
+
+// Word cloud
+const wcC=document.getElementById('wc');
+wcC.width=wcC.parentElement.offsetWidth-40;
+wcC.height=350;
+const wcD=[["半導體", 10], ["綠能", 4], ["金融", 3], ["電子產業", 2], ["網通", 2], ["房地產", 2], ["自行車產業", 1], ["財務狀況", 1], ["產業周期", 1], ["生產力", 1], ["先進封裝", 1], ["AI時代", 1], ["晶片效能", 1], ["供應鏈", 1], ["產業變化", 1], ["風險管理", 1], ["投資策略", 1], ["人形機器人", 1], ["伺服器", 1], ["AI伺服器", 1], ["光學", 1], ["基建", 1], ["光通訊", 1], ["AI", 1], ["消費電子", 1], ["生技", 1], ["記憶體", 1], ["股市", 1], ["證券", 1]];
+const mx=Math.max(...wcD.map(d=>d[1]));
+const pal=['#ff6b6b','#ffa94d','#ffd43b','#51cf66','#22b8cf','#6c63ff','#cc5de8','#f093fb'];
+WordCloud(wcC,{
+  list:wcD.map(d=>[d[0],d[1]/mx*55+14]),
+  fontFamily:"'Microsoft JhengHei',sans-serif",
+  color:()=>pal[Math.floor(Math.random()*pal.length)],
+  backgroundColor:'transparent',
+  rotateRatio:0.25,gridSize:8,weightFactor:1,shuffle:true
+});
+</script>
+</body>
+</html>
