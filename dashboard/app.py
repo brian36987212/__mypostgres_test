@@ -10,7 +10,7 @@ from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
 from linebot.models import MessageEvent, TextMessage, TextSendMessage
 
-load_dotenv()
+load_dotenv(override=False)  # 不覆蓋 Railway 注入的環境變數
 
 app = Flask(__name__)
 app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0
@@ -23,6 +23,7 @@ def add_header(response):
     return response
 
 PG_DSN = os.getenv("DATABASE_URL", "postgresql://postgres:lab529@localhost:5432/postgres")
+USE_SSL = "supabase" in PG_DSN or os.getenv("DB_SSL", "") == "true"
 
 # LINE Bot 設定
 LINE_CHANNEL_SECRET = os.getenv('LINE_CHANNEL_SECRET', '')
@@ -32,6 +33,8 @@ line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN) if LINE_CHANNEL_ACCESS_TOKE
 handler = WebhookHandler(LINE_CHANNEL_SECRET) if LINE_CHANNEL_SECRET else None
 
 async def get_db_pool():
+    if USE_SSL:
+        return await asyncpg.create_pool(PG_DSN, ssl="require")
     return await asyncpg.create_pool(PG_DSN)
 
 @app.route('/')
