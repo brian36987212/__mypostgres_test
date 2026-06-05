@@ -1,129 +1,161 @@
 # 股市新聞爬蟲 + Dashboard + LINE Bot 系統
 
-完整的股市新聞追蹤系統，包含資料爬取、情緒分析、視覺化 Dashboard 和 LINE Bot 互動介面。
+完整的股市新聞追蹤系統，包含多來源資料爬取、AI 情緒與題材分析、視覺化 Dashboard 和 LINE Bot 互動介面。
 
 ---
 
 ## 📊 系統架構
 
 ```
-┌─────────────────┐
-│  Yahoo Finance  │  ← 新聞來源
-└────────┬────────┘
-         │ 爬蟲抓取
-         ↓
-┌─────────────────────────────────────────┐
-│     分級爬蟲 (stocks_news/yahoo/)       │
-│  ┌──────────────┐  ┌──────────────┐    │
-│  │crawler_hot.py│  │crawler_mid.py│    │
-│  │  (熱門股)    │  │  (中間股)    │    │
-│  └──────────────┘  └──────────────┘    │
-│  ┌──────────────┐  ┌──────────────┐    │
-│  │crawler_lower │  │crawler_rare  │    │
-│  │  (偏下股)    │  │  (稀少股)    │    │
-│  └──────────────┘  └──────────────┘    │
-│                                         │
-│  - 抓取股票新聞                         │
-│  - AI 情緒分析 (NVIDIA NIM)             │
-│  - 斷點續爬                             │
-└────────┬────────────────────────────────┘
-         │ 寫入
-         ↓
-┌─────────────────┐
-│   PostgreSQL    │  ← 資料庫
-│  ┌───────────┐  │     - yahoo_stock_news (新聞資料)
-│  │yahoo_stock│  │     - stock_mapping (股票對照表)
-│  │   _news   │  │
-│  └───────────┘  │
-└────┬───────┬────┘
-     │       │
-     │       └──────────────┐
-     │ 查詢                 │ 查詢
-     ↓                      ↓
-┌─────────────────┐  ┌─────────────────┐
-│   Dashboard     │  │    LINE Bot     │
-│   (Flask Web)   │  │  (Flask Webhook)│
-│                 │  │                 │
-│ - 統計圖表      │  │ - 查詢股票      │
-│ - 即時資料      │  │ - 熱門排行      │
-│ - 情緒分析      │  │ - 情緒過濾      │
-└─────────────────┘  └─────────────────┘
-     ↓                      ↓
-  瀏覽器訪問              LINE 聊天
+┌──────────────┐  ┌──────────────┐  ┌──────────────┐
+│ Yahoo Finance│  │  鉅亨網      │  │  NStock      │
+└──────┬───────┘  └──────┬───────┘  └──────┬───────┘
+       │                  │                  │
+       └──────────────────┼──────────────────┘
+                          │ 分級爬蟲抓取
+                          ↓
+              ┌──────────────────────────┐
+              │  AI 情緒分析 (NVIDIA NIM) │
+              │  主題標籤 (NVIDIA NIM)    │
+              └──────────┬───────────────┘
+                         │ 寫入
+                         ↓
+              ┌──────────────────────────┐
+              │   本機 PostgreSQL        │  ← 完整歷史資料
+              │  (yahoo/cnyes/nstock)    │
+              └──────────┬───────────────┘
+                         │ 每日 sync 最近30天
+                         ↓
+              ┌──────────────────────────┐
+              │   Supabase (雲端 DB)     │  ← 近期資料 (≤ 30天)
+              └──────────┬───────────────┘
+                    ┌────┘────────────────┐
+                    │ 查詢                 │ 查詢
+                    ↓                      ↓
+         ┌──────────────────┐  ┌──────────────────┐
+         │  Dashboard       │  │   LINE Bot       │
+         │  (Railway 雲端)  │  │  (Flask Webhook) │
+         └──────────────────┘  └──────────────────┘
 ```
 
 ---
 
 ## 🔄 資料流程
 
-### 1. 資料收集階段
-```
-Yahoo Finance → 分級爬蟲 (4支) → NVIDIA NIM (情緒分析) → PostgreSQL
-```
+### 1. 資料收集（本機執行）
 
-**執行腳本:** `stocks_news/yahoo/crawler_*.py` (4 支爬蟲)
-- `crawler_hot.py` - 爬取熱門股 (974支，3天內新聞)
-- `crawler_mid.py` - 爬取中間股 (487支，3天內新聞)
-- `crawler_lower.py` - 爬取偏下股 (293支，7天內新聞)
-- `crawler_rare.py` - 爬取稀少股 (195支，7天內新聞)
+**三個來源，各自有分級爬蟲:**
 
-**分級依據:** 依股票成交金額分為 4 組 (詳見 `stocks_category/stock_category.md`)
-- 熱門：成交金額 ≥ 19,834 元 (50%)
-- 中間：3,684 ~ 19,834 元 (25%)
-- 偏下：927 ~ 3,684 元 (15%)
-- 稀少：0 ~ 927 元 (10%)
+| 來源 | 路徑 | 說明 |
+|------|------|------|
+| Yahoo Finance | `stocks_news/yahoo/` | 4 支分級爬蟲 |
+| 鉅亨網 (Cnyes) | `stocks_news/cnyes/` | 4 支分級爬蟲 |
+| NStock | `stocks_news/nstock/` | 4 支分級爬蟲 |
+
+**分級依據（依股票成交金額分為 4 組）:**
+- `crawler_hot.py` - 熱門股（成交金額 ≥ 19,834 元，前 50%）
+- `crawler_mid.py` - 中間股（3,684 ~ 19,834 元，25%）
+- `crawler_lower.py` - 偏下股（927 ~ 3,684 元，15%）
+- `crawler_rare.py` - 稀少股（0 ~ 927 元，10%）
 
 **爬蟲特色:**
-- 使用 `curl_cffi` 模擬真實瀏覽器 TLS 指紋
-- 非同步並發處理，提升效率
-- 指數退避重試機制，避免被封鎖
-- 支援斷點續爬 (progress_*.txt)
-- AI 情緒分析 (1-9分)
+- `curl_cffi` 模擬真實瀏覽器 TLS 指紋，繞過反爬蟲
+- 非同步並發處理（asyncio + asyncpg）
+- 指數退避重試機制
+- 斷點續爬（progress_*.txt）
+- NVIDIA NIM API 情緒分析（1-9 分）
 
-### 2. 資料展示階段
+### 2. 題材分析（本機執行，使用歷史資料）
+
 ```
-PostgreSQL → Flask App → 前端/LINE
+本機 PostgreSQL → analyze_sentiment.py → AI 題材標籤
+                → theme_trends_compare_new.py → 趨勢比較報告
 ```
 
-**Dashboard:** `dashboard/app.py`
-- 提供 Web 介面查看統計資料
-- 即時圖表和趨勢分析
+- `stocks_news/*/analyze_sentiment.py` - 補跑情緒分析
+- `test_theme_ai.py` - AI 題材標籤測試
+- `theme_trends_compare_new.py` - 題材趨勢比較（整合 Google Trends）
 
-**LINE Bot:** `dashboard/app.py` (同一個 Flask app)
-- 透過 LINE 查詢股票新聞
-- 支援情緒過濾和熱門排行
+### 3. 雲端同步（每日執行）
+
+```
+本機 DB（最近30天） → sync_to_supabase.py → Supabase
+```
+
+```powershell
+python sync_to_supabase.py
+```
+
+- 自動同步近 30 天新聞到 Supabase
+- 自動清理 Supabase 中超過 30 天的舊資料
+- 確保 Supabase 永遠不超過 500MB 免費上限
+
+### 4. Dashboard 展示（Railway 雲端）
+
+```
+Supabase → Flask API (Railway) → 瀏覽器 / LINE
+```
 
 ---
 
 ## 🗄️ 資料庫結構
 
-### 主要資料表: `yahoo_stock_news`
+### `yahoo_stock_news`
 ```sql
 CREATE TABLE yahoo_stock_news (
-    id SERIAL PRIMARY KEY,
-    stock_id VARCHAR(10),           -- 股票代碼
-    title TEXT,                     -- 新聞標題
-    link TEXT,                      -- 新聞連結
-    publisher VARCHAR(100),         -- 發布者
-    published_text VARCHAR(50),     -- 發布時間文字
-    sentiment_score INTEGER,        -- 情緒分數 (1-9)
-    fetched_at TIMESTAMP,          -- 抓取時間
-    fetched_date DATE              -- 抓取日期
+    id              SERIAL PRIMARY KEY,
+    stock_id        VARCHAR(10),
+    title           TEXT,
+    publisher       VARCHAR(100),
+    reporter        VARCHAR(100),
+    published_text  VARCHAR(50),
+    content         TEXT,
+    sentiment_score INTEGER,        -- AI 情緒分數 (1-9)
+    url             TEXT,
+    fetched_at      TIMESTAMPTZ,
+    fetched_date    DATE,
+    fetched_time    TIME,
+    UNIQUE(stock_id, url)
 );
 ```
 
-### 股票對照表: `stock_mapping`
+### `cnyes_stock_news`
+```sql
+CREATE TABLE cnyes_stock_news (
+    id              SERIAL PRIMARY KEY,
+    stock_id        VARCHAR(10),
+    news_id         VARCHAR(50),
+    title           TEXT,
+    category_name   VARCHAR(50),
+    published_at    TIMESTAMPTZ,
+    content         TEXT,
+    sentiment_score INTEGER,
+    url             TEXT,
+    fetched_date    DATE,
+    UNIQUE(stock_id, news_id)
+);
+```
+
+### `nstock_stock_news`
+```sql
+CREATE TABLE nstock_stock_news (
+    id              SERIAL PRIMARY KEY,
+    stock_id        VARCHAR(10),
+    title           TEXT,
+    content         TEXT,
+    sentiment_score INTEGER,
+    url             TEXT,
+    fetched_date    DATE,
+    UNIQUE(stock_id, url)
+);
+```
+
+### `stock_mapping`
 ```sql
 CREATE TABLE stock_mapping (
-    stock_id VARCHAR(10) PRIMARY KEY,  -- 股票代碼
-    stock_name VARCHAR(100)            -- 股票名稱
+    stock_id   VARCHAR(10) PRIMARY KEY,
+    stock_name VARCHAR(100)
 );
-```
-
-**範例資料:**
-```sql
-INSERT INTO stock_mapping VALUES ('2330', '台積電');
-INSERT INTO stock_mapping VALUES ('2317', '鴻海');
 ```
 
 ---
@@ -132,306 +164,194 @@ INSERT INTO stock_mapping VALUES ('2317', '鴻海');
 
 ### 前置準備
 - Python 3.10+
-- PostgreSQL
-- NVIDIA NIM API key (用於情緒分析)
-- LINE Developers 帳號 (用於 LINE Bot)
+- PostgreSQL 18（本機）
+- NVIDIA NIM API key（用於情緒/題材分析）
+- LINE Developers 帳號（用於 LINE Bot）
+- Supabase 帳號（免費，用於雲端 Dashboard）
+- Railway 帳號（免費，用於部署 Dashboard）
 
 ### 1. Clone 專案
 ```bash
-git clone git@github.com:brian36987212/__mypostgres_test.git
-cd __mypostgres_test/python_desktop
+git clone https://github.com/brian36987212/StockPulse.git
+cd StockPulse
 ```
 
 ### 2. 建立虛擬環境
 ```bash
 python -m venv .venv
 .\.venv\Scripts\activate
-```
-
-### 3. 安裝套件
-```bash
 pip install -r requirements.txt
 ```
 
-### 4. 設定資料庫
-```sql
--- 建立資料表
-CREATE TABLE yahoo_stock_news (
-    id SERIAL PRIMARY KEY,
-    stock_id VARCHAR(10),
-    title TEXT,
-    link TEXT,
-    publisher VARCHAR(100),
-    published_text VARCHAR(50),
-    sentiment_score INTEGER,
-    fetched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    fetched_date DATE DEFAULT CURRENT_DATE
-);
+### 3. 設定環境變數
 
-CREATE TABLE stock_mapping (
-    stock_id VARCHAR(10) PRIMARY KEY,
-    stock_name VARCHAR(100)
-);
-
--- 匯入股票對照表
--- 執行 dashboard/import_stock_names.py
-```
-
-### 5. 設定環境變數
-
-**爬蟲環境變數** (`.env`):
+**根目錄 `.env`（爬蟲 + 同步腳本）:**
 ```bash
 NVIDIA_API_KEY=your_nvidia_api_key
+DATABASE_URL=postgresql://postgres.xxxx:PASSWORD@aws-1-ap-northeast-1.pooler.supabase.com:5432/postgres
 ```
 
-**Dashboard/LINE Bot 環境變數** (`dashboard/.env`):
+**`dashboard/.env`（本機開發用）:**
 ```bash
 LINE_CHANNEL_SECRET=your_channel_secret
 LINE_CHANNEL_ACCESS_TOKEN=your_access_token
+DATABASE_URL=postgresql://postgres.xxxx:PASSWORD@aws-1-ap-northeast-1.pooler.supabase.com:5432/postgres
 ```
 
-### 6. 執行爬蟲
+### 4. 執行爬蟲（擇一來源）
 
-**依序執行 4 支爬蟲:**
-
-```bash
-# 1. 熱門股 (974支，3天內新聞)
+```powershell
+# Yahoo Finance
 cd stocks_news/yahoo
 python crawler_hot.py
 
-# 2. 中間股 (487支，3天內新聞)
-python crawler_mid.py
-
-# 3. 偏下股 (293支，7天內新聞)
-python crawler_lower.py
-
-# 4. 稀少股 (195支，7天內新聞)
-python crawler_rare.py
-```
-
-**或同時執行多個爬蟲 (開多個終端):**
-```bash
-# 終端 1
+# 鉅亨網
+cd stocks_news/cnyes
 python crawler_hot.py
 
-# 終端 2
-python crawler_mid.py
-
-# 終端 3
-python crawler_lower.py
-
-# 終端 4
-python crawler_rare.py
+# NStock
+cd stocks_news/nstock
+python crawler_hot.py
 ```
 
-**斷點續爬:**
-- 每支爬蟲會自動記錄進度到 `progress_*.txt`
-- 中斷後重新執行會自動跳過已完成的股票
+### 5. 同步資料到 Supabase
 
-### 7. 啟動 Dashboard + LINE Bot
-
-你可以使用兩種方法啟動，推薦使用第一種（一鍵啟動）：
-
-**方法一：使用 Batch 腳本（推薦）**
-在資料夾中雙擊執行 `start_dashboard.bat`，或在終端機中執行：
 ```powershell
-cd dashboard
-start_dashboard.bat
+cd d:\StockPulse
+python sync_to_supabase.py
 ```
 
-**方法二：手動執行 Python**
+### 6. 本機啟動 Dashboard
+
 ```powershell
 cd dashboard
 python app.py
 ```
 
-Dashboard 會在 http://localhost:5000 啟動。啟動後，LINE Bot 的伺服器也就緒了。
+訪問 http://localhost:5000
 
-### 8. 啟用 LINE Bot 功能 (使用 ngrok)
+---
 
-要讓 LINE 能夠連線到你的電腦，需要使用 ngrok 將本地的 5000 端口暴露到網際網路上：
+## ☁️ 雲端部署架構
 
-1. 開啟一個**新的**終端機視窗，執行：
-```powershell
-# 依據你安裝 ngrok 的路徑，可能需要輸入完整路徑如 C:\ngrok\ngrok.exe http 5000
-ngrok http 5000
-```
+| 服務 | 平台 | 說明 |
+|------|------|------|
+| Dashboard + LINE Bot | **Railway** | 從 GitHub 自動部署 |
+| 資料庫（近期資料） | **Supabase** | 免費 500MB，存最近 30 天 |
+| 完整歷史資料 | **本機 PostgreSQL** | 供題材分析使用 |
 
-2. 複製 ngrok 提供的 **HTTPS** URL。
-3. 前往 [LINE Developers Console](https://developers.line.biz/console/)，進入你的 Messaging API Channel。
-4. 在 Webhook settings 中設定 Webhook URL（記得加上 `/webhook`）：
-```
-https://你的ngrok網址/webhook
-```
-5. 點擊 **Verify** 確認連線成功，並確保 **Use webhook** 已開啟。
+### Railway 環境變數設定
 
-> **注意：** 確保 `dashboard/.env` 中已設定 `LINE_CHANNEL_SECRET` 和 `LINE_CHANNEL_ACCESS_TOKEN`。免費用戶每次重啟 ngrok 網址會變更，需重新設定 Webhook URL。
+| 變數名 | 說明 |
+|--------|------|
+| `DATABASE_URL` | Supabase pooler connection string |
+| `LINE_CHANNEL_SECRET` | LINE Bot Channel Secret |
+| `LINE_CHANNEL_ACCESS_TOKEN` | LINE Bot Access Token |
+
+### Railway 設定
+- **Root Directory:** `dashboard`
+- **Start Command:** `gunicorn app:app --bind 0.0.0.0:$PORT`
 
 ---
 
 ## 📱 LINE Bot 功能
 
-詳細使用說明請參考: [LINE_BOT_GUIDE.md](dashboard/LINE_BOT_GUIDE.md)
+詳細說明請參考: [LINE_BOT_GUIDE.md](dashboard/LINE_BOT_GUIDE.md)
 
 **支援指令:**
 - `查詢 [股票名稱]` - 查詢特定股票新聞
-- `熱門` - 最活躍的10檔股票
-- `最新` - 最新5則新聞
-- `正面` - 正面情緒新聞 (分數 7-9)
-- `負面` - 負面情緒新聞 (分數 1-3)
+- `熱門` - 最活躍的 10 檔股票
+- `最新` - 最新 5 則新聞
+- `正面` - 正面情緒新聞（分數 7-9）
+- `負面` - 負面情緒新聞（分數 1-3）
 
 ---
 
 ## 🖥️ Dashboard 功能
 
-訪問 http://localhost:5000 可以看到:
-
 - **總體統計**: 新聞總數、股票數、今日新聞、平均情緒
 - **情緒分布圖**: 新聞情緒分數分布
 - **熱門股票**: 新聞數量 TOP 10
-- **每日趨勢**: 近 30 天新聞數量趨勢
+- **每日趨勢**: 近 30 天新聞量趨勢
 - **最新新聞**: 即時更新的最新 20 則新聞
 
 ---
 
 ## 🔧 技術棧
 
-### 爬蟲部分
-- **requests** / **curl_cffi**: HTTP 請求
-- **BeautifulSoup4**: HTML 解析
-- **OpenAI SDK**: 呼叫 NVIDIA NIM API 進行情緒分析
-- **asyncpg**: 非同步 PostgreSQL 操作
-
-### Dashboard + LINE Bot
-- **Flask**: Web 框架
-- **asyncpg**: 非同步資料庫查詢
-- **line-bot-sdk**: LINE Messaging API
-- **Chart.js**: 前端圖表 (透過 CDN)
-
-### 資料庫
-- **PostgreSQL**: 主要資料儲存
+| 類別 | 技術 |
+|------|------|
+| 爬蟲 | `curl_cffi`, `BeautifulSoup4`, `asyncio` |
+| AI 分析 | `openai` SDK → NVIDIA NIM API |
+| 資料庫（本機） | PostgreSQL 18 + `asyncpg`/`psycopg2` |
+| 資料庫（雲端） | Supabase（PostgreSQL） |
+| Web 框架 | Flask + Gunicorn |
+| 部署 | Railway |
+| LINE Bot | `line-bot-sdk` |
+| 前端圖表 | Chart.js（CDN） |
 
 ---
 
 ## 📂 專案結構
 
 ```
-python_desktop/
-├── stocks_news/                 # 爬蟲程式目錄
-│   └── yahoo/
-│       ├── crawler_hot.py      # 熱門股爬蟲 (974支)
-│       ├── crawler_mid.py      # 中間股爬蟲 (487支)
-│       ├── crawler_lower.py    # 偏下股爬蟲 (293支)
-│       └── crawler_rare.py     # 稀少股爬蟲 (195支)
+StockPulse/
+├── stocks_news/
+│   ├── yahoo/              # Yahoo Finance 爬蟲
+│   │   ├── crawler_hot.py
+│   │   ├── crawler_mid.py
+│   │   ├── crawler_lower.py
+│   │   ├── crawler_rare.py
+│   │   ├── fetch_content.py
+│   │   └── analyze_sentiment.py
+│   ├── cnyes/              # 鉅亨網爬蟲
+│   │   └── (同上結構)
+│   └── nstock/             # NStock 爬蟲
+│       └── (同上結構)
 │
-├── stocks_category/             # 股票分類資料
-│   ├── stock_category.md       # 分類規則說明
-│   ├── 股票代號_熱門_v2.csv
-│   ├── 股票代號_中間_v2.csv
-│   ├── 股票代號_偏下_v2.csv
-│   └── 股票代號_稀少_v2.csv
-│
-├── dashboard/                   # Dashboard + LINE Bot
-│   ├── app.py                   # Flask 主程式
+├── dashboard/              # Web Dashboard + LINE Bot
+│   ├── app.py              # Flask 主程式
 │   ├── templates/
-│   │   └── index.html          # Dashboard 前端
-│   ├── import_stock_names.py   # 匯入股票對照表工具
-│   ├── .env                    # LINE Bot 環境變數
-│   ├── .env.example            # 環境變數範例
-│   └── LINE_BOT_GUIDE.md       # LINE Bot 使用指南
+│   │   └── index.html
+│   ├── Procfile            # Railway 部署設定
+│   ├── requirements.txt
+│   └── LINE_BOT_GUIDE.md
 │
-├── requirements.txt             # Python 套件
-├── .env                        # 爬蟲環境變數
-└── README.md                   # 本檔案
-```
-
----
-
-## 🔍 串接邏輯詳解
-
-### 爬蟲 → 資料庫
-```python
-# stocks_news/yahoo/crawler_hot.py (以熱門股爬蟲為例)
-async def process_stock(sem, session, db_pool, ai_client, stock_code):
-    # 1. 抓取新聞列表
-    list_html = await get_html_async(session, target_url)
-    news_list = parse_list_page(list_html)
-    
-    # 2. 逐一處理新聞
-    for list_title, url in news_list:
-        detail_html = await get_html_async(session, url)
-        detail = parse_detail_page(detail_html)
-        
-        # 3. AI 情緒分析
-        sentiment_score = await get_nvidia_sentiment_score_async(ai_client, content)
-        
-        # 4. 寫入資料庫
-        async with db_pool.acquire() as conn:
-            await conn.execute(UPSERT_SQL, 
-                stock_code, title, publisher, reporter, published_text, 
-                content, sentiment_score, url, now_dt, now_dt.date(), now_dt.time()
-            )
-```
-
-### 資料庫 → Dashboard
-```python
-# dashboard/app.py
-@app.route('/api/recent_news')
-def get_recent_news():
-    # 查詢最新新聞
-    rows = await conn.fetch("""
-        SELECT n.*, m.stock_name
-        FROM yahoo_stock_news n
-        LEFT JOIN stock_mapping m ON n.stock_id = m.stock_id
-        ORDER BY n.fetched_at DESC
-        LIMIT 20
-    """)
-    return jsonify(rows)
-```
-
-### 資料庫 → LINE Bot
-```python
-# dashboard/app.py
-@app.route("/callback", methods=['POST'])
-def callback():
-    # 接收 LINE webhook
-    handler.handle(body, signature)
-
-@handler.add(MessageEvent, message=TextMessage)
-def handle_message(event):
-    # 查詢資料庫
-    if user_text.startswith("查詢"):
-        stock_name = user_text.replace("查詢", "").strip()
-        reply = await query_stock_news(stock_name)
-        # 回傳給 LINE
-        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=reply))
+├── stocks_category/        # 股票分級資料 (CSV)
+│
+├── migrate_to_supabase.py  # 一次性遷移腳本（初次部署用）
+├── sync_to_supabase.py     # 每日同步腳本（維持近30天資料）
+├── theme_trends_compare_new.py  # 題材趨勢分析
+├── test_theme_ai.py        # AI 題材標籤測試
+├── .env                    # 環境變數（不 commit）
+├── .gitignore
+└── README.md
 ```
 
 ---
 
 ## 🐛 疑難排解
 
-### 爬蟲問題
-- **Request denied**: Yahoo 反爬蟲機制，使用 `curl_cffi` 模擬瀏覽器
-- **情緒分析失敗**: 檢查 NVIDIA API key 是否正確
-
-### Dashboard 問題
-- **資料庫連線失敗**: 檢查 PostgreSQL 是否運行
-- **圖表不顯示**: 檢查瀏覽器 console 是否有錯誤
-
-### LINE Bot 問題
-- **Bot 沒回應**: 檢查 ngrok 是否運行、Webhook URL 是否正確
-- **查詢無結果**: 檢查資料庫是否有該股票資料
+| 問題 | 解法 |
+|------|------|
+| 爬蟲被封鎖 | `curl_cffi` 已模擬瀏覽器指紋，確認 session 設定正確 |
+| 情緒分析失敗 | 檢查 `NVIDIA_API_KEY` 是否有效 |
+| Dashboard 資料空白 | 執行 `sync_to_supabase.py`，確認 `DATABASE_URL` 設定正確 |
+| Railway 連線失敗 | 確認 Railway Variables 中 `DATABASE_URL` 使用 Supabase pooler URL |
+| Supabase 密碼驗證失敗 | 去 Supabase → Settings → Database → Reset password |
 
 ---
 
 ## 📝 待辦事項
 
-- [ ] 支援更多股票代碼
-- [ ] 新增新聞全文爬取
-- [ ] 實作定時自動爬取
-- [ ] Dashboard 新增更多圖表
-- [ ] LINE Bot 支援圖片回覆
+- [x] 多來源爬蟲（Yahoo、Cnyes、NStock）
+- [x] AI 情緒分析（NVIDIA NIM）
+- [x] 雲端部署（Railway + Supabase）
+- [x] 每日資料同步機制（保留 30 天）
+- [ ] 爬蟲自動排程（Windows Task Scheduler）
+- [ ] 題材篩選結果持久化到 DB
+- [ ] Dashboard 新增題材趨勢頁面
+- [ ] LINE Bot 支援題材查詢
 
 ---
 
@@ -441,6 +361,4 @@ MIT License
 
 ---
 
-**最後更新:** 2026-01-27
-
-
+**最後更新:** 2026-06-05
