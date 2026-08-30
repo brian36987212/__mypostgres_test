@@ -10,6 +10,8 @@ from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
 from linebot.models import MessageEvent, TextMessage, TextSendMessage
 
+import price_source
+
 load_dotenv(override=False)  # 不覆蓋 Railway 注入的環境變數
 
 app = Flask(__name__)
@@ -33,13 +35,21 @@ line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN) if LINE_CHANNEL_ACCESS_TOKE
 handler = WebhookHandler(LINE_CHANNEL_SECRET) if LINE_CHANNEL_SECRET else None
 
 async def get_db_pool():
+    # 每個 API 請求都會各自開一個新 pool（見下方 _get_* 函式），
+    # refreshAll() 會同時打 9 支 API，預設 max_size=10 的話尖峰可能衝到 90 條連線，
+    # 超過 pooler（本機或 Supabase）的 session 上限，回傳 EMAXCONNSESSION。
+    # 每個請求內部查詢都是循序執行，1~2 條連線就夠用。
     if USE_SSL:
-        return await asyncpg.create_pool(PG_DSN, ssl="require")
-    return await asyncpg.create_pool(PG_DSN)
+        return await asyncpg.create_pool(PG_DSN, ssl="require", min_size=1, max_size=2)
+    return await asyncpg.create_pool(PG_DSN, min_size=1, max_size=2)
 
 @app.route('/')
 def index():
     return render_template('index.html')
+
+@app.route('/pro')
+def pro():
+    return render_template('pro.html')
 
 @app.route('/api/stats')
 def get_stats():
@@ -265,6 +275,417 @@ async def _get_daily_trend():
         'labels': [row['fetched_date'].strftime('%m/%d') for row in rows],
         'data': [row['count'] for row in rows]
     }
+
+@app.route('/api/pro/stock')
+def get_pro_stock():
+    """個股查詢：股票資訊卡 + 情緒 K 線 + 熱門題材 + 新聞明細（依日期區間）"""
+    q = request.args.get('q', '').strip()
+    start = request.args.get('start', '').strip()
+    end = request.args.get('end', '').strip()
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    result = loop.run_until_complete(_get_pro_stock(q, start, end))
+    loop.close()
+    return jsonify(result)
+
+def _parse_date(s, default):
+    try:
+        return datetime.strptime(s, '%Y-%m-%d').date()
+    except (ValueError, TypeError):
+        return default
+
+def _moving_average(values, window):
+    out = []
+    for i in range(len(values)):
+        if i + 1 < window:
+            out.append(None)
+        else:
+            seg = values[i + 1 - window:i + 1]
+            out.append(round(sum(seg) / window, 2))
+    return out
+
+async def _get_pro_stock(q, start, end):
+    today = datetime.now(ZoneInfo("Asia/Taipei")).date()
+    end_d = _parse_date(end, today)
+    start_d = _parse_date(start, end_d - timedelta(days=30))
+    if start_d > end_d:
+        start_d, end_d = end_d, start_d
+
+    if not q:
+        return {'found': False, 'reason': 'empty_query',
+                'date_range': {'start': start_d.isoformat(), 'end': end_d.isoformat()}}
+
+    pool = await get_db_pool()
+    async with pool.acquire() as conn:
+        # 解析股票（代號或名稱）
+        stock = await conn.fetchrow("""
+            SELECT s.stock_id, COALESCE(m.stock_name, s.stock_id) AS stock_name
+            FROM (
+                SELECT DISTINCT stock_id FROM yahoo_stock_news
+                UNION SELECT DISTINCT stock_id FROM cnyes_stock_news
+                UNION SELECT DISTINCT stock_id FROM nstock_stock_news
+            ) s
+            LEFT JOIN stock_mapping m ON s.stock_id = m.stock_id
+            WHERE s.stock_id = $1 OR m.stock_name LIKE $2
+            ORDER BY (s.stock_id = $1) DESC
+            LIMIT 1
+        """, q, f'%{q}%')
+
+        if not stock:
+            await pool.close()
+            return {'found': False, 'reason': 'not_found',
+                    'query': q,
+                    'date_range': {'start': start_d.isoformat(), 'end': end_d.isoformat()}}
+
+        stock_id = stock['stock_id']
+        stock_name = stock['stock_name']
+
+        rows = await conn.fetch("""
+            SELECT title, sentiment_score, fetched_date, fetched_at, source, media, category, keywords, url
+            FROM (
+                SELECT n.title, n.sentiment_score, n.fetched_date, n.fetched_at,
+                       'Yahoo' AS source, n.publisher AS media, NULL::text AS category, n.keywords, n.url
+                FROM yahoo_stock_news n WHERE n.stock_id = $1
+                UNION ALL
+                SELECT n.title, n.sentiment_score, n.fetched_date, n.fetched_at,
+                       '鉅亨網' AS source, n.category_name AS media, n.category_name AS category, n.keywords, n.url
+                FROM cnyes_stock_news n WHERE n.stock_id = $1
+                UNION ALL
+                SELECT n.title, n.sentiment_score, n.fetched_date, n.fetched_at,
+                       'NStock' AS source, n.category AS media, n.category AS category, n.keywords, n.url
+                FROM nstock_stock_news n WHERE n.stock_id = $1
+            ) t
+            WHERE fetched_date BETWEEN $2 AND $3
+            ORDER BY fetched_at
+        """, stock_id, start_d, end_d)
+    await pool.close()
+
+    # ---- 情緒 K 線：每日 open/high/low/close（依當日新聞情緒分數）----
+    by_day = {}
+    for r in rows:
+        s = r['sentiment_score']
+        if s is None or r['fetched_date'] is None:
+            continue
+        by_day.setdefault(r['fetched_date'], []).append(s)
+    day_keys = sorted(by_day.keys())
+    labels, ohlc = [], []
+    for d in day_keys:
+        vals = by_day[d]  # 已依 fetched_at 排序
+        labels.append(d.strftime('%m/%d'))
+        ohlc.append([vals[0], max(vals), min(vals), vals[-1]])
+    closes = [c[3] for c in ohlc]
+    kline = {
+        'labels': labels,
+        'ohlc': ohlc,
+        'ma3': _moving_average(closes, 3),
+        'ma5': _moving_average(closes, 5),
+        'ma10': _moving_average(closes, 10),
+    }
+
+    # ---- 熱門題材 Top N（該股區間內關鍵字，含趨勢）----
+    mid = start_d + (end_d - start_d) / 2
+    kw_stat = {}
+    for r in rows:
+        recent = r['fetched_date'] is not None and r['fetched_date'] >= mid
+        for kw in (r['keywords'] or []):
+            st = kw_stat.setdefault(kw, {'count': 0, 'sent': [], 'recent': 0, 'earlier': 0})
+            st['count'] += 1
+            if r['sentiment_score'] is not None:
+                st['sent'].append(r['sentiment_score'])
+            if recent:
+                st['recent'] += 1
+            else:
+                st['earlier'] += 1
+    hot = []
+    for kw, st in kw_stat.items():
+        ratio = (st['recent'] + 1) / (st['earlier'] + 1)
+        trend = 'up' if ratio > 1.15 else 'down' if ratio < 0.87 else 'flat'
+        hot.append({
+            'keyword': kw,
+            'count': st['count'],
+            'avg_sentiment': round(sum(st['sent']) / len(st['sent']), 1) if st['sent'] else None,
+            'trend': trend,
+        })
+    hot.sort(key=lambda x: x['count'], reverse=True)
+    for i, h in enumerate(hot[:5], 1):
+        h['rank'] = i
+    hot_topics = hot[:5]
+
+    # ---- 新聞明細 ----
+    news = [{
+        'date': r['fetched_date'].strftime('%Y/%m/%d') if r['fetched_date'] else None,
+        'title': r['title'],
+        'media': r['media'] or r['source'],
+        'source': r['source'],
+        'sentiment_score': r['sentiment_score'],
+        'category': r['category'] or ((r['keywords'] or [None])[0]) or '—',
+        'url': r['url'],
+    } for r in sorted(rows, key=lambda x: (x['fetched_at'] is not None, x['fetched_at']), reverse=True)]
+
+    # ---- 股價 / 產業別（TWSE / TPEX 官方 OpenAPI）----
+    price_info = price_source.get_price(stock_id)
+    industry = price_source.get_industry(stock_id)
+
+    return {
+        'found': True,
+        'stock_id': stock_id,
+        'stock_name': stock_name,
+        'price': price_info['price'] if price_info else None,
+        'price_change': price_info['change'] if price_info else None,
+        'price_change_pct': price_info['change_pct'] if price_info else None,
+        'price_date': price_info['trade_date'] if price_info else None,
+        'industry': industry,
+        'news_count': len(rows),
+        'date_range': {'start': start_d.isoformat(), 'end': end_d.isoformat()},
+        'kline': kline,
+        'hot_topics': hot_topics,
+        'news': news,
+    }
+
+@app.route('/api/pro/topics')
+def get_pro_topics():
+    """熱門題材完整列表（Top 20）"""
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    result = loop.run_until_complete(_get_pro_topics())
+    loop.close()
+    return jsonify(result)
+
+async def _get_pro_topics():
+    pool = await get_db_pool()
+    try:
+        async with pool.acquire() as conn:
+            max_date = await conn.fetchval("SELECT MAX(computed_date) FROM theme_daily_summary")
+            if not max_date:
+                return {'computed_date': None, 'topics': []}
+            rows = await conn.fetch("""
+                SELECT rank, keyword, category, recent_count, trend_ratio, avg_sentiment, hotness, sources
+                FROM theme_daily_summary
+                WHERE computed_date = $1
+                ORDER BY rank
+                LIMIT 20
+            """, max_date)
+    except asyncpg.exceptions.UndefinedTableError:
+        return {'computed_date': None, 'topics': []}
+    finally:
+        await pool.close()
+
+    return {
+        'computed_date': max_date.isoformat(),
+        'topics': [{
+            'rank': r['rank'],
+            'keyword': r['keyword'],
+            'category': r['category'],
+            'recent_count': r['recent_count'],
+            'trend_ratio': float(r['trend_ratio']) if r['trend_ratio'] is not None else None,
+            'avg_sentiment': float(r['avg_sentiment']) if r['avg_sentiment'] is not None else None,
+            'hotness': float(r['hotness']) if r['hotness'] is not None else None,
+            'sources': r['sources'],
+        } for r in rows]
+    }
+
+@app.route('/api/pro/news_search')
+def get_pro_news_search():
+    """新聞搜尋：關鍵字 / 來源 / 情緒區間"""
+    q = request.args.get('q', '').strip()
+    source = request.args.get('source', '').strip()   # '', 'Yahoo', '鉅亨網', 'NStock'
+    try:
+        smin = int(request.args.get('min', 1))
+        smax = int(request.args.get('max', 9))
+    except ValueError:
+        smin, smax = 1, 9
+    filtered = request.args.get('min') is not None or request.args.get('max') is not None
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    result = loop.run_until_complete(_get_pro_news_search(q, source, smin, smax, not filtered))
+    loop.close()
+    return jsonify(result)
+
+async def _get_pro_news_search(q, source, smin, smax, include_nulls):
+    branches = {
+        'Yahoo': """
+            SELECT n.stock_id, COALESCE(m.stock_name, n.stock_id) AS stock_name, n.title,
+                   n.publisher AS media, n.sentiment_score, n.fetched_date, n.fetched_at,
+                   'Yahoo' AS source, n.url
+            FROM yahoo_stock_news n LEFT JOIN stock_mapping m ON n.stock_id = m.stock_id
+            WHERE (n.title LIKE $1 OR m.stock_name LIKE $1 OR n.stock_id LIKE $1)
+              AND (n.sentiment_score BETWEEN $2 AND $3 OR ($4 AND n.sentiment_score IS NULL))""",
+        '鉅亨網': """
+            SELECT n.stock_id, COALESCE(m.stock_name, n.stock_id) AS stock_name, n.title,
+                   n.category_name AS media, n.sentiment_score, n.fetched_date, n.fetched_at,
+                   '鉅亨網' AS source, n.url
+            FROM cnyes_stock_news n LEFT JOIN stock_mapping m ON n.stock_id = m.stock_id
+            WHERE (n.title LIKE $1 OR m.stock_name LIKE $1 OR n.stock_id LIKE $1)
+              AND (n.sentiment_score BETWEEN $2 AND $3 OR ($4 AND n.sentiment_score IS NULL))""",
+        'NStock': """
+            SELECT n.stock_id, COALESCE(m.stock_name, n.stock_id) AS stock_name, n.title,
+                   n.category AS media, n.sentiment_score, n.fetched_date, n.fetched_at,
+                   'NStock' AS source, n.url
+            FROM nstock_stock_news n LEFT JOIN stock_mapping m ON n.stock_id = m.stock_id
+            WHERE (n.title LIKE $1 OR m.stock_name LIKE $1 OR n.stock_id LIKE $1)
+              AND (n.sentiment_score BETWEEN $2 AND $3 OR ($4 AND n.sentiment_score IS NULL))""",
+    }
+    selected = [sql for name, sql in branches.items() if source in ('', name)]
+    if not selected:
+        return []
+    union = " UNION ALL ".join(selected)
+    full = f"""
+        SELECT * FROM (
+            SELECT DISTINCT ON (title, stock_id) *
+            FROM ({union}) AS t
+            ORDER BY title, stock_id, fetched_at DESC
+        ) u
+        ORDER BY fetched_at DESC NULLS LAST
+        LIMIT 50
+    """
+    pool = await get_db_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(full, f'%{q}%', smin, smax, include_nulls)
+    await pool.close()
+
+    return [{
+        'stock_id': r['stock_id'],
+        'stock_name': r['stock_name'],
+        'title': r['title'],
+        'media': r['media'] or r['source'],
+        'source': r['source'],
+        'sentiment_score': r['sentiment_score'],
+        'date': r['fetched_date'].strftime('%Y/%m/%d') if r['fetched_date'] else None,
+        'url': r['url'],
+    } for r in rows]
+
+@app.route('/api/pro/watchlist')
+def get_pro_watchlist():
+    """自選股批次摘要：news_count / avg_sentiment / 即時股價"""
+    ids = [s.strip() for s in request.args.get('ids', '').split(',') if s.strip()]
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    result = loop.run_until_complete(_get_pro_watchlist(ids))
+    loop.close()
+    return jsonify(result)
+
+async def _get_pro_watchlist(ids):
+    if not ids:
+        return []
+    pool = await get_db_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch("""
+            SELECT c.stock_id, COALESCE(m.stock_name, c.stock_id) AS stock_name,
+                   SUM(c.cnt) AS news_count, SUM(c.scnt) AS scnt, SUM(c.ssum) AS ssum
+            FROM (
+                SELECT stock_id, COUNT(*) cnt, COUNT(sentiment_score) scnt, COALESCE(SUM(sentiment_score),0) ssum
+                FROM yahoo_stock_news WHERE stock_id = ANY($1) GROUP BY stock_id
+                UNION ALL
+                SELECT stock_id, COUNT(*) cnt, COUNT(sentiment_score) scnt, COALESCE(SUM(sentiment_score),0) ssum
+                FROM cnyes_stock_news WHERE stock_id = ANY($1) GROUP BY stock_id
+                UNION ALL
+                SELECT stock_id, COUNT(*) cnt, COUNT(sentiment_score) scnt, COALESCE(SUM(sentiment_score),0) ssum
+                FROM nstock_stock_news WHERE stock_id = ANY($1) GROUP BY stock_id
+            ) c
+            LEFT JOIN stock_mapping m ON c.stock_id = m.stock_id
+            GROUP BY c.stock_id, m.stock_name
+        """, ids)
+    await pool.close()
+
+    by_id = {r['stock_id']: r for r in rows}
+    result = []
+    for sid in ids:
+        r = by_id.get(sid)
+        news_count = int(r['news_count']) if r else 0
+        scnt = int(r['scnt']) if r else 0
+        avg_sent = round(float(r['ssum']) / scnt, 2) if (r and scnt) else None
+        stock_name = r['stock_name'] if r else sid
+        price_info = price_source.get_price(sid)
+        result.append({
+            'stock_id': sid,
+            'stock_name': stock_name,
+            'news_count': news_count,
+            'avg_sentiment': avg_sent,
+            'price': price_info['price'] if price_info else None,
+            'price_change': price_info['change'] if price_info else None,
+            'price_change_pct': price_info['change_pct'] if price_info else None,
+        })
+    return result
+
+@app.route('/api/indicators')
+def get_indicators():
+    """取得三大分數指標（市場情緒 / 題材熱度 / 新聞動能）"""
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    result = loop.run_until_complete(_get_indicators())
+    loop.close()
+    return jsonify(result)
+
+async def _get_indicators():
+    pool = await get_db_pool()
+    try:
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow("""
+                SELECT * FROM daily_indicators
+                ORDER BY computed_date DESC
+                LIMIT 1
+            """)
+    except asyncpg.exceptions.UndefinedTableError:
+        row = None
+    finally:
+        await pool.close()
+
+    if not row:
+        return None
+
+    return {
+        'computed_date': row['computed_date'].isoformat(),
+        'market_sentiment': {
+            'score': float(row['market_sentiment_score']) if row['market_sentiment_score'] is not None else None,
+            'label': row['market_sentiment_label']
+        },
+        'topic_heat': {
+            'score': float(row['topic_heat_score']) if row['topic_heat_score'] is not None else None,
+            'label': row['topic_heat_label']
+        },
+        'news_momentum': {
+            'score': float(row['news_momentum_score']) if row['news_momentum_score'] is not None else None,
+            'label': row['news_momentum_label']
+        }
+    }
+
+@app.route('/api/hot_topics')
+def get_hot_topics():
+    """取得熱門議題 Top 3"""
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    result = loop.run_until_complete(_get_hot_topics())
+    loop.close()
+    return jsonify(result)
+
+async def _get_hot_topics():
+    pool = await get_db_pool()
+    try:
+        async with pool.acquire() as conn:
+            max_date = await conn.fetchval("SELECT MAX(computed_date) FROM theme_daily_summary")
+            if not max_date:
+                return []
+            rows = await conn.fetch("""
+                SELECT rank, keyword, category, recent_count, trend_ratio, avg_sentiment, sources
+                FROM theme_daily_summary
+                WHERE computed_date = $1
+                ORDER BY rank
+                LIMIT 3
+            """, max_date)
+    except asyncpg.exceptions.UndefinedTableError:
+        rows = []
+    finally:
+        await pool.close()
+
+    return [{
+        'rank': row['rank'],
+        'keyword': row['keyword'],
+        'category': row['category'],
+        'recent_count': row['recent_count'],
+        'trend_ratio': float(row['trend_ratio']) if row['trend_ratio'] is not None else None,
+        'avg_sentiment': float(row['avg_sentiment']) if row['avg_sentiment'] is not None else None,
+        'sources': row['sources']
+    } for row in rows]
 
 @app.route('/api/weekly_analysis')
 def get_weekly_analysis():

@@ -1,0 +1,1504 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>台股題材趨勢分析 v2（關鍵詞版）</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<script src="https://cdn.jsdelivr.net/npm/wordcloud@1.2.2/src/wordcloud2.min.js"></script>
+<style>
+:root{--bg:#0f1117;--card:#1a1d27;--bd:#2a2d3a;--tx:#e2e8f0;--mu:#718096;--acc:#6c63ff;
+  --blast:#ff6b6b;--rise:#22b8cf;--hot:#ffa94d;--news:#51cf66;--warn:#cc5de8;--up:#74c0fc;--cold:#868e96}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--tx);font-family:'Microsoft JhengHei','Segoe UI',sans-serif;padding:24px}
+h1{font-size:1.8rem;background:linear-gradient(90deg,#6c63ff,#22b8cf);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:4px}
+.sub{color:var(--mu);font-size:.85rem;margin-bottom:24px}
+.stats{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:24px}
+.sc{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:14px 22px;flex:1;min-width:130px}
+.sc .n{font-size:2rem;font-weight:700}
+.sc .l{color:var(--mu);font-size:.78rem;margin-top:3px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:20px;margin-bottom:20px}
+.card h3{color:var(--mu);font-size:.9rem;margin-bottom:14px}
+#wc{width:100%;height:350px}
+.charts{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px}
+.cw{position:relative;height:340px}
+table{width:100%;border-collapse:collapse;background:var(--card);border-radius:12px;overflow:hidden;border:1px solid var(--bd)}
+thead th{background:#12151f;color:var(--mu);font-size:.75rem;text-transform:uppercase;padding:10px 12px;text-align:left}
+tbody tr{border-top:1px solid var(--bd);transition:background .15s}
+tbody tr:hover{background:#1e2130}
+td{padding:10px 12px;font-size:.85rem}
+.kw{font-weight:600;font-size:.95rem}
+.hot{font-weight:700;color:var(--acc)}
+.bar-w{background:#2a2d3a;border-radius:3px;height:6px;width:110px;overflow:hidden}
+.bar{height:100%;border-radius:3px;background:linear-gradient(90deg,#6c63ff,#22b8cf)}
+.sent-pos{color:#51cf66;font-weight:600}
+.sent-neg{color:#ff6b6b;font-weight:600}
+.sent-neu{color:#ffa94d}
+.src-dot{background:#2a2d3a;border-radius:4px;padding:1px 6px;font-size:.75rem;color:#adb5bd}
+.badge{font-size:.7rem;padding:2px 7px;border-radius:20px;white-space:nowrap}
+.badge-blast{background:rgba(255,107,107,.18);color:var(--blast);border:1px solid rgba(255,107,107,.35)}
+.badge-rise {background:rgba(34,184,207,.18);color:var(--rise);border:1px solid rgba(34,184,207,.35)}
+.badge-hot  {background:rgba(255,169,77,.18);color:var(--hot);border:1px solid rgba(255,169,77,.35)}
+.badge-news {background:rgba(81,207,102,.18);color:var(--news);border:1px solid rgba(81,207,102,.35)}
+.badge-warn {background:rgba(204,93,232,.18);color:var(--warn);border:1px solid rgba(204,93,232,.35)}
+.badge-up   {background:rgba(116,192,252,.18);color:var(--up);border:1px solid rgba(116,192,252,.35)}
+.badge-cold {background:rgba(134,142,150,.18);color:var(--cold);border:1px solid rgba(134,142,150,.35)}
+.sec{font-size:1.05rem;font-weight:600;margin:20px 0 10px}
+.legend{display:flex;gap:20px;flex-wrap:wrap;margin-bottom:16px;font-size:.8rem}
+.legend span{display:flex;align-items:center;gap:6px;color:var(--mu)}
+.legend i{width:12px;height:12px;border-radius:3px;display:inline-block}
+@media(max-width:700px){.charts{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<h1>📊 台股題材趨勢分析 <small style="font-size:.6em;-webkit-text-fill-color:#718096">v2 · 關鍵詞版</small></h1>
+<p class="sub">
+  jieba 斷詞 → 移除公司/機構 → 詞頻比對（近 7 天 vs 近 90 天基準）｜ 2026-07-19 21:05
+</p>
+
+<div class="stats">
+  <div class="sc"><div class="n">122</div><div class="l">📊 識別關鍵詞數</div></div>
+  <div class="sc"><div class="n" style="color:var(--blast)">28</div><div class="l">🚀 爆發性成長</div></div>
+  <div class="sc"><div class="n" style="color:var(--rise)">84</div><div class="l">📈 新興題材</div></div>
+  <div class="sc"><div class="n" style="color:var(--hot)">0</div><div class="l">🔥 熱門且情緒強</div></div>
+</div>
+
+<div class="card">
+  <h3>☁️ 近期題材文字雲（字體 = 近 7 天出現次數）</h3>
+  <canvas id="wc"></canvas>
+</div>
+
+<div class="charts">
+  <div class="card">
+    <h3>📊 Top 30 — 近期 vs 基準出現量（等比 7 天）</h3>
+    <div class="cw"><canvas id="cBar"></canvas></div>
+  </div>
+  <div class="card">
+    <h3>🚀 Top 30 — 趨勢倍率（近期/基準 每日均量）</h3>
+    <div class="cw"><canvas id="cTrend"></canvas></div>
+  </div>
+</div>
+
+<div class="legend">
+  <span><i style="background:rgba(255,107,107,.7)"></i> 爆發性成長（倍率≥2 且近期≥10）</span>
+  <span><i style="background:rgba(34,184,207,.7)"></i> 新興題材（倍率≥2 且多來源）</span>
+  <span><i style="background:rgba(255,169,77,.7)"></i> 熱門且情緒強（近期≥10 且偏離≥1.5）</span>
+  <span><i style="background:#51cf66"></i> 趨勢倍率 ≥ 1.2　　<i style="background:#718096"></i> 穩定</span>
+</div>
+
+<p class="sec">📋 完整關鍵詞列表（共 122 個）</p>
+<table>
+  <thead>
+    <tr>
+      <th>#</th><th>關鍵詞</th><th>分類</th>
+      <th>近7天</th><th>熱度條</th>
+      <th>趨勢倍率</th><th>平均情緒</th>
+      <th>來源數</th><th>熱度分</th>
+    </tr>
+  </thead>
+  <tbody>
+      <tr>
+        <td>1</td>
+        <td class="kw">生醫</td>
+        <td><span class="badge badge-blast">🚀 爆發性成長</span></td>
+        <td>36</td>
+        <td><div class="bar-w"><div class="bar" style="width:73%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">424.21x</td>
+        <td class="sent-neu">🟡 6.5</td>
+        <td><span class="src-dot">3</span></td>
+        <td class="hot">82.7</td>
+      </tr>
+      <tr>
+        <td>2</td>
+        <td class="kw">電零組</td>
+        <td><span class="badge badge-blast">🚀 爆發性成長</span></td>
+        <td>33</td>
+        <td><div class="bar-w"><div class="bar" style="width:67%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">91.69x</td>
+        <td class="sent-neu">🟡 6.9</td>
+        <td><span class="src-dot">1</span></td>
+        <td class="hot">78.6</td>
+      </tr>
+      <tr>
+        <td>3</td>
+        <td class="kw">光電</td>
+        <td><span class="badge badge-blast">🚀 爆發性成長</span></td>
+        <td>21</td>
+        <td><div class="bar-w"><div class="bar" style="width:43%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">162.03x</td>
+        <td class="sent-neu">🟡 5.8</td>
+        <td><span class="src-dot">3</span></td>
+        <td class="hot">72.0</td>
+      </tr>
+      <tr>
+        <td>4</td>
+        <td class="kw">電週邊</td>
+        <td><span class="badge badge-blast">🚀 爆發性成長</span></td>
+        <td>23</td>
+        <td><div class="bar-w"><div class="bar" style="width:47%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">183.66x</td>
+        <td class="sent-neu">🟡 6.6</td>
+        <td><span class="src-dot">1</span></td>
+        <td class="hot">71.4</td>
+      </tr>
+      <tr>
+        <td>5</td>
+        <td class="kw">通網</td>
+        <td><span class="badge badge-blast">🚀 爆發性成長</span></td>
+        <td>21</td>
+        <td><div class="bar-w"><div class="bar" style="width:43%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">170.98x</td>
+        <td class="sent-neu">🟡 6.2</td>
+        <td><span class="src-dot">1</span></td>
+        <td class="hot">70.0</td>
+      </tr>
+      <tr>
+        <td>6</td>
+        <td class="kw">新股</td>
+        <td><span class="badge badge-blast">🚀 爆發性成長</span></td>
+        <td>18</td>
+        <td><div class="bar-w"><div class="bar" style="width:37%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">52.38x</td>
+        <td class="sent-neu">🟡 5.4</td>
+        <td><span class="src-dot">3</span></td>
+        <td class="hot">69.9</td>
+      </tr>
+      <tr>
+        <td>7</td>
+        <td class="kw">電機</td>
+        <td><span class="badge badge-blast">🚀 爆發性成長</span></td>
+        <td>17</td>
+        <td><div class="bar-w"><div class="bar" style="width:35%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">75.94x</td>
+        <td class="sent-neu">🟡 6.4</td>
+        <td><span class="src-dot">2</span></td>
+        <td class="hot">68.1</td>
+      </tr>
+      <tr>
+        <td>8</td>
+        <td class="kw">執行</td>
+        <td><span class="badge badge-blast">🚀 爆發性成長</span></td>
+        <td>15</td>
+        <td><div class="bar-w"><div class="bar" style="width:31%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">39.86x</td>
+        <td class="sent-neu">🟡 6.8</td>
+        <td><span class="src-dot">3</span></td>
+        <td class="hot">67.7</td>
+      </tr>
+      <tr>
+        <td>9</td>
+        <td class="kw">發放現</td>
+        <td><span class="badge badge-blast">🚀 爆發性成長</span></td>
+        <td>14</td>
+        <td><div class="bar-w"><div class="bar" style="width:29%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">89.95x</td>
+        <td class="sent-neu">🟡 6.7</td>
+        <td><span class="src-dot">3</span></td>
+        <td class="hot">67.0</td>
+      </tr>
+      <tr>
+        <td>10</td>
+        <td class="kw">營建</td>
+        <td><span class="badge badge-blast">🚀 爆發性成長</span></td>
+        <td>15</td>
+        <td><div class="bar-w"><div class="bar" style="width:31%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">263.6x</td>
+        <td class="sent-pos">🟢 7.3</td>
+        <td><span class="src-dot">2</span></td>
+        <td class="hot">66.7</td>
+      </tr>
+      <tr>
+        <td>11</td>
+        <td class="kw">延至</td>
+        <td><span class="badge badge-blast">🚀 爆發性成長</span></td>
+        <td>15</td>
+        <td><div class="bar-w"><div class="bar" style="width:31%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">1058.59x</td>
+        <td class="sent-neu">🟡 5.0</td>
+        <td><span class="src-dot">2</span></td>
+        <td class="hot">66.7</td>
+      </tr>
+      <tr>
+        <td>12</td>
+        <td class="kw">資服</td>
+        <td><span class="badge badge-blast">🚀 爆發性成長</span></td>
+        <td>14</td>
+        <td><div class="bar-w"><div class="bar" style="width:29%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">605.17x</td>
+        <td class="sent-pos">🟢 7.1</td>
+        <td><span class="src-dot">2</span></td>
+        <td class="hot">66.0</td>
+      </tr>
+      <tr>
+        <td>13</td>
+        <td class="kw">如因</td>
+        <td><span class="badge badge-blast">🚀 爆發性成長</span></td>
+        <td>13</td>
+        <td><div class="bar-w"><div class="bar" style="width:27%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">4459.5x</td>
+        <td class="sent-pos">🟢 7.0</td>
+        <td><span class="src-dot">2</span></td>
+        <td class="hot">65.3</td>
+      </tr>
+      <tr>
+        <td>14</td>
+        <td class="kw">無擔</td>
+        <td><span class="badge badge-blast">🚀 爆發性成長</span></td>
+        <td>11</td>
+        <td><div class="bar-w"><div class="bar" style="width:22%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">32.77x</td>
+        <td class="sent-neu">🟡 5.5</td>
+        <td><span class="src-dot">3</span></td>
+        <td class="hot">64.9</td>
+      </tr>
+      <tr>
+        <td>15</td>
+        <td class="kw">保轉換</td>
+        <td><span class="badge badge-blast">🚀 爆發性成長</span></td>
+        <td>11</td>
+        <td><div class="bar-w"><div class="bar" style="width:22%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">39.0x</td>
+        <td class="sent-neu">🟡 5.5</td>
+        <td><span class="src-dot">3</span></td>
+        <td class="hot">64.9</td>
+      </tr>
+      <tr>
+        <td>16</td>
+        <td class="kw">觀光</td>
+        <td><span class="badge badge-blast">🚀 爆發性成長</span></td>
+        <td>10</td>
+        <td><div class="bar-w"><div class="bar" style="width:20%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">114.24x</td>
+        <td class="sent-neu">🟡 6.5</td>
+        <td><span class="src-dot">3</span></td>
+        <td class="hot">64.1</td>
+      </tr>
+      <tr>
+        <td>17</td>
+        <td class="kw">鋼鐵</td>
+        <td><span class="badge badge-blast">🚀 爆發性成長</span></td>
+        <td>11</td>
+        <td><div class="bar-w"><div class="bar" style="width:22%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">83.06x</td>
+        <td class="sent-neu">🟡 6.0</td>
+        <td><span class="src-dot">2</span></td>
+        <td class="hot">63.9</td>
+      </tr>
+      <tr>
+        <td>18</td>
+        <td class="kw">將順</td>
+        <td><span class="badge badge-blast">🚀 爆發性成長</span></td>
+        <td>11</td>
+        <td><div class="bar-w"><div class="bar" style="width:22%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">3788.9x</td>
+        <td class="sent-neu">🟡 5.0</td>
+        <td><span class="src-dot">2</span></td>
+        <td class="hot">63.9</td>
+      </tr>
+      <tr>
+        <td>19</td>
+        <td class="kw">股權</td>
+        <td><span class="badge badge-rise">📈 新興題材</span></td>
+        <td>9</td>
+        <td><div class="bar-w"><div class="bar" style="width:18%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">32.61x</td>
+        <td class="sent-neu">🟡 5.8</td>
+        <td><span class="src-dot">3</span></td>
+        <td class="hot">63.4</td>
+      </tr>
+      <tr>
+        <td>20</td>
+        <td class="kw">下一個</td>
+        <td><span class="badge badge-blast">🚀 爆發性成長</span></td>
+        <td>10</td>
+        <td><div class="bar-w"><div class="bar" style="width:20%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">94.92x</td>
+        <td class="sent-pos">🟢 7.8</td>
+        <td><span class="src-dot">2</span></td>
+        <td class="hot">63.1</td>
+      </tr>
+      <tr>
+        <td>21</td>
+        <td class="kw">數雲端</td>
+        <td><span class="badge badge-blast">🚀 爆發性成長</span></td>
+        <td>11</td>
+        <td><div class="bar-w"><div class="bar" style="width:22%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">400.45x</td>
+        <td class="sent-neu">🟡 6.6</td>
+        <td><span class="src-dot">1</span></td>
+        <td class="hot">62.9</td>
+      </tr>
+      <tr>
+        <td>22</td>
+        <td class="kw">工認</td>
+        <td><span class="badge badge-rise">📈 新興題材</span></td>
+        <td>8</td>
+        <td><div class="bar-w"><div class="bar" style="width:16%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">65.42x</td>
+        <td class="sent-neu">🟡 5.5</td>
+        <td><span class="src-dot">3</span></td>
+        <td class="hot">62.7</td>
+      </tr>
+      <tr>
+        <td>23</td>
+        <td class="kw">憑證</td>
+        <td><span class="badge badge-rise">📈 新興題材</span></td>
+        <td>8</td>
+        <td><div class="bar-w"><div class="bar" style="width:16%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">48.05x</td>
+        <td class="sent-neu">🟡 6.0</td>
+        <td><span class="src-dot">3</span></td>
+        <td class="hot">62.7</td>
+      </tr>
+      <tr>
+        <td>24</td>
+        <td class="kw">擔保</td>
+        <td><span class="badge badge-rise">📈 新興題材</span></td>
+        <td>8</td>
+        <td><div class="bar-w"><div class="bar" style="width:16%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">60.0x</td>
+        <td class="sent-neu">🟡 5.7</td>
+        <td><span class="src-dot">3</span></td>
+        <td class="hot">62.7</td>
+      </tr>
+      <tr>
+        <td>25</td>
+        <td class="kw">發放日</td>
+        <td><span class="badge badge-rise">📈 新興題材</span></td>
+        <td>8</td>
+        <td><div class="bar-w"><div class="bar" style="width:16%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">47.42x</td>
+        <td class="sent-neu">🟡 5.7</td>
+        <td><span class="src-dot">3</span></td>
+        <td class="hot">62.7</td>
+      </tr>
+      <tr>
+        <td>26</td>
+        <td class="kw">化工</td>
+        <td><span class="badge badge-rise">📈 新興題材</span></td>
+        <td>9</td>
+        <td><div class="bar-w"><div class="bar" style="width:18%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">98.15x</td>
+        <td class="sent-neu">🟡 6.7</td>
+        <td><span class="src-dot">2</span></td>
+        <td class="hot">62.4</td>
+      </tr>
+      <tr>
+        <td>27</td>
+        <td class="kw">季轉換</td>
+        <td><span class="badge badge-rise">📈 新興題材</span></td>
+        <td>9</td>
+        <td><div class="bar-w"><div class="bar" style="width:18%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">329.58x</td>
+        <td class="sent-neu">🟡 4.9</td>
+        <td><span class="src-dot">2</span></td>
+        <td class="hot">62.4</td>
+      </tr>
+      <tr>
+        <td>28</td>
+        <td class="kw">現金</td>
+        <td><span class="badge badge-blast">🚀 爆發性成長</span></td>
+        <td>49</td>
+        <td><div class="bar-w"><div class="bar" style="width:100%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">13.75x</td>
+        <td class="sent-neu">🟡 6.4</td>
+        <td><span class="src-dot">3</span></td>
+        <td class="hot">62.2</td>
+      </tr>
+      <tr>
+        <td>29</td>
+        <td class="kw">第二次</td>
+        <td><span class="badge badge-rise">📈 新興題材</span></td>
+        <td>7</td>
+        <td><div class="bar-w"><div class="bar" style="width:14%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">33.74x</td>
+        <td class="sent-neu">🟡 5.6</td>
+        <td><span class="src-dot">3</span></td>
+        <td class="hot">62.0</td>
+      </tr>
+      <tr>
+        <td>30</td>
+        <td class="kw">第三次</td>
+        <td><span class="badge badge-rise">📈 新興題材</span></td>
+        <td>7</td>
+        <td><div class="bar-w"><div class="bar" style="width:14%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">98.51x</td>
+        <td class="sent-neu">🟡 5.0</td>
+        <td><span class="src-dot">3</span></td>
+        <td class="hot">62.0</td>
+      </tr>
+      <tr>
+        <td>31</td>
+        <td class="kw">食品</td>
+        <td><span class="badge badge-rise">📈 新興題材</span></td>
+        <td>7</td>
+        <td><div class="bar-w"><div class="bar" style="width:14%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">39.63x</td>
+        <td class="sent-pos">🟢 7.0</td>
+        <td><span class="src-dot">3</span></td>
+        <td class="hot">62.0</td>
+      </tr>
+      <tr>
+        <td>32</td>
+        <td class="kw">生活</td>
+        <td><span class="badge badge-rise">📈 新興題材</span></td>
+        <td>7</td>
+        <td><div class="bar-w"><div class="bar" style="width:14%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">46.59x</td>
+        <td class="sent-neu">🟡 6.9</td>
+        <td><span class="src-dot">3</span></td>
+        <td class="hot">62.0</td>
+      </tr>
+      <tr>
+        <td>33</td>
+        <td class="kw">紀念品</td>
+        <td><span class="badge badge-rise">📈 新興題材</span></td>
+        <td>8</td>
+        <td><div class="bar-w"><div class="bar" style="width:16%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">389.02x</td>
+        <td class="sent-neu">🟡 5.4</td>
+        <td><span class="src-dot">2</span></td>
+        <td class="hot">61.7</td>
+      </tr>
+      <tr>
+        <td>34</td>
+        <td class="kw">息率</td>
+        <td><span class="badge badge-rise">📈 新興題材</span></td>
+        <td>6</td>
+        <td><div class="bar-w"><div class="bar" style="width:12%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">34.2x</td>
+        <td class="sent-neu">🟡 5.5</td>
+        <td><span class="src-dot">3</span></td>
+        <td class="hot">61.3</td>
+      </tr>
+      <tr>
+        <td>35</td>
+        <td class="kw">月份</td>
+        <td><span class="badge badge-rise">📈 新興題材</span></td>
+        <td>9</td>
+        <td><div class="bar-w"><div class="bar" style="width:18%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">28.69x</td>
+        <td class="sent-neu">🟡 6.6</td>
+        <td><span class="src-dot">3</span></td>
+        <td class="hot">61.0</td>
+      </tr>
+      <tr>
+        <td>36</td>
+        <td class="kw">紡纖</td>
+        <td><span class="badge badge-warn">⚠️ 情緒異常</span></td>
+        <td>8</td>
+        <td><div class="bar-w"><div class="bar" style="width:16%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">2783.0x</td>
+        <td class="sent-pos">🟢 7.0</td>
+        <td><span class="src-dot">1</span></td>
+        <td class="hot">60.7</td>
+      </tr>
+      <tr>
+        <td>37</td>
+        <td class="kw">水泥</td>
+        <td><span class="badge badge-rise">📈 新興題材</span></td>
+        <td>5</td>
+        <td><div class="bar-w"><div class="bar" style="width:10%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">61.94x</td>
+        <td class="sent-pos">🟢 7.2</td>
+        <td><span class="src-dot">3</span></td>
+        <td class="hot">60.6</td>
+      </tr>
+      <tr>
+        <td>38</td>
+        <td class="kw">回庫</td>
+        <td><span class="badge badge-rise">📈 新興題材</span></td>
+        <td>5</td>
+        <td><div class="bar-w"><div class="bar" style="width:10%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">54.62x</td>
+        <td class="sent-neu">🟡 6.9</td>
+        <td><span class="src-dot">3</span></td>
+        <td class="hot">60.6</td>
+      </tr>
+      <tr>
+        <td>39</td>
+        <td class="kw">生醫股</td>
+        <td><span class="badge badge-warn">⚠️ 情緒異常</span></td>
+        <td>7</td>
+        <td><div class="bar-w"><div class="bar" style="width:14%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">95.56x</td>
+        <td class="sent-neu">🟡 6.8</td>
+        <td><span class="src-dot">1</span></td>
+        <td class="hot">60.0</td>
+      </tr>
+      <tr>
+        <td>40</td>
+        <td class="kw">航運</td>
+        <td><span class="badge badge-rise">📈 新興題材</span></td>
+        <td>4</td>
+        <td><div class="bar-w"><div class="bar" style="width:8%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">80.44x</td>
+        <td class="sent-neu">🟡 6.8</td>
+        <td><span class="src-dot">3</span></td>
+        <td class="hot">59.9</td>
+      </tr>
+      <tr>
+        <td>41</td>
+        <td class="kw">汽車</td>
+        <td><span class="badge badge-blast">🚀 爆發性成長</span></td>
+        <td>10</td>
+        <td><div class="bar-w"><div class="bar" style="width:20%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">27.49x</td>
+        <td class="sent-neu">🟡 6.8</td>
+        <td><span class="src-dot">3</span></td>
+        <td class="hot">59.5</td>
+      </tr>
+      <tr>
+        <td>42</td>
+        <td class="kw">盈餘轉</td>
+        <td><span class="badge badge-rise">📈 新興題材</span></td>
+        <td>3</td>
+        <td><div class="bar-w"><div class="bar" style="width:6%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">56.86x</td>
+        <td class="sent-neu">🟡 5.9</td>
+        <td><span class="src-dot">3</span></td>
+        <td class="hot">59.1</td>
+      </tr>
+      <tr>
+        <td>43</td>
+        <td class="kw">電纜</td>
+        <td><span class="badge badge-rise">📈 新興題材</span></td>
+        <td>3</td>
+        <td><div class="bar-w"><div class="bar" style="width:6%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">78.6x</td>
+        <td class="sent-neu">🟡 6.4</td>
+        <td><span class="src-dot">3</span></td>
+        <td class="hot">59.1</td>
+      </tr>
+      <tr>
+        <td>44</td>
+        <td class="kw">昆山</td>
+        <td><span class="badge badge-rise">📈 新興題材</span></td>
+        <td>3</td>
+        <td><div class="bar-w"><div class="bar" style="width:6%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">50.83x</td>
+        <td class="sent-neu">🟡 5.3</td>
+        <td><span class="src-dot">3</span></td>
+        <td class="hot">59.1</td>
+      </tr>
+      <tr>
+        <td>45</td>
+        <td class="kw">依公開</td>
+        <td><span class="badge badge-rise">📈 新興題材</span></td>
+        <td>3</td>
+        <td><div class="bar-w"><div class="bar" style="width:6%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">49.09x</td>
+        <td class="sent-neu">🟡 5.1</td>
+        <td><span class="src-dot">3</span></td>
+        <td class="hot">59.1</td>
+      </tr>
+      <tr>
+        <td>46</td>
+        <td class="kw">到期</td>
+        <td><span class="badge badge-rise">📈 新興題材</span></td>
+        <td>3</td>
+        <td><div class="bar-w"><div class="bar" style="width:6%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">31.07x</td>
+        <td class="sent-neu">🟡 6.2</td>
+        <td><span class="src-dot">3</span></td>
+        <td class="hot">59.1</td>
+      </tr>
+      <tr>
+        <td>47</td>
+        <td class="kw">第四次</td>
+        <td><span class="badge badge-rise">📈 新興題材</span></td>
+        <td>3</td>
+        <td><div class="bar-w"><div class="bar" style="width:6%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">74.53x</td>
+        <td class="sent-neu">🟡 5.7</td>
+        <td><span class="src-dot">3</span></td>
+        <td class="hot">59.1</td>
+      </tr>
+      <tr>
+        <td>48</td>
+        <td class="kw">Corp</td>
+        <td><span class="badge badge-rise">📈 新興題材</span></td>
+        <td>3</td>
+        <td><div class="bar-w"><div class="bar" style="width:6%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">88.25x</td>
+        <td class="sent-neu">🟡 5.3</td>
+        <td><span class="src-dot">3</span></td>
+        <td class="hot">59.1</td>
+      </tr>
+      <tr>
+        <td>49</td>
+        <td class="kw">91APP</td>
+        <td><span class="badge badge-rise">📈 新興題材</span></td>
+        <td>3</td>
+        <td><div class="bar-w"><div class="bar" style="width:6%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">100.59x</td>
+        <td class="sent-pos">🟢 7.5</td>
+        <td><span class="src-dot">3</span></td>
+        <td class="hot">59.1</td>
+      </tr>
+      <tr>
+        <td>50</td>
+        <td class="kw">截止日</td>
+        <td><span class="badge badge-rise">📈 新興題材</span></td>
+        <td>3</td>
+        <td><div class="bar-w"><div class="bar" style="width:6%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">228.32x</td>
+        <td class="sent-neu">🟡 5.5</td>
+        <td><span class="src-dot">3</span></td>
+        <td class="hot">59.1</td>
+      </tr>
+      <tr>
+        <td>51</td>
+        <td class="kw">還本</td>
+        <td><span class="badge badge-rise">📈 新興題材</span></td>
+        <td>3</td>
+        <td><div class="bar-w"><div class="bar" style="width:6%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">67.53x</td>
+        <td class="sent-neu">🟡 5.3</td>
+        <td><span class="src-dot">3</span></td>
+        <td class="hot">59.1</td>
+      </tr>
+      <tr>
+        <td>52</td>
+        <td class="kw">代本</td>
+        <td><span class="badge badge-rise">📈 新興題材</span></td>
+        <td>3</td>
+        <td><div class="bar-w"><div class="bar" style="width:6%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">67.53x</td>
+        <td class="sent-neu">🟡 5.6</td>
+        <td><span class="src-dot">3</span></td>
+        <td class="hot">59.1</td>
+      </tr>
+      <tr>
+        <td>53</td>
+        <td class="kw">因受</td>
+        <td><span class="badge badge-rise">📈 新興題材</span></td>
+        <td>4</td>
+        <td><div class="bar-w"><div class="bar" style="width:8%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">435.89x</td>
+        <td class="sent-neu">🟡 5.0</td>
+        <td><span class="src-dot">2</span></td>
+        <td class="hot">58.9</td>
+      </tr>
+      <tr>
+        <td>54</td>
+        <td class="kw">日至</td>
+        <td><span class="badge badge-rise">📈 新興題材</span></td>
+        <td>6</td>
+        <td><div class="bar-w"><div class="bar" style="width:12%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">28.52x</td>
+        <td class="sent-neu">🟡 6.4</td>
+        <td><span class="src-dot">3</span></td>
+        <td class="hot">58.6</td>
+      </tr>
+      <tr>
+        <td>55</td>
+        <td class="kw">綠能環</td>
+        <td><span class="badge badge-warn">⚠️ 情緒異常</span></td>
+        <td>5</td>
+        <td><div class="bar-w"><div class="bar" style="width:10%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">224.29x</td>
+        <td class="sent-neu">🟡 6.5</td>
+        <td><span class="src-dot">1</span></td>
+        <td class="hot">58.6</td>
+      </tr>
+      <tr>
+        <td>56</td>
+        <td class="kw">認股</td>
+        <td><span class="badge badge-rise">📈 新興題材</span></td>
+        <td>4</td>
+        <td><div class="bar-w"><div class="bar" style="width:8%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">29.15x</td>
+        <td class="sent-neu">🟡 5.7</td>
+        <td><span class="src-dot">3</span></td>
+        <td class="hot">58.3</td>
+      </tr>
+      <tr>
+        <td>57</td>
+        <td class="kw">尚凡</td>
+        <td><span class="badge badge-rise">📈 新興題材</span></td>
+        <td>3</td>
+        <td><div class="bar-w"><div class="bar" style="width:6%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">1106.49x</td>
+        <td class="sent-pos">🟢 7.0</td>
+        <td><span class="src-dot">2</span></td>
+        <td class="hot">58.1</td>
+      </tr>
+      <tr>
+        <td>58</td>
+        <td class="kw">之承諾</td>
+        <td><span class="badge badge-rise">📈 新興題材</span></td>
+        <td>3</td>
+        <td><div class="bar-w"><div class="bar" style="width:6%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">1106.49x</td>
+        <td class="sent-neu">🟡 5.0</td>
+        <td><span class="src-dot">2</span></td>
+        <td class="hot">58.1</td>
+      </tr>
+      <tr>
+        <td>59</td>
+        <td class="kw">其後續</td>
+        <td><span class="badge badge-rise">📈 新興題材</span></td>
+        <td>3</td>
+        <td><div class="bar-w"><div class="bar" style="width:6%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">435.89x</td>
+        <td class="sent-pos">🟢 7.0</td>
+        <td><span class="src-dot">2</span></td>
+        <td class="hot">58.1</td>
+      </tr>
+      <tr>
+        <td>60</td>
+        <td class="kw">慘跌</td>
+        <td><span class="badge badge-rise">📈 新興題材</span></td>
+        <td>3</td>
+        <td><div class="bar-w"><div class="bar" style="width:6%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">154.67x</td>
+        <td class="sent-neu">🟡 5.8</td>
+        <td><span class="src-dot">2</span></td>
+        <td class="hot">58.1</td>
+      </tr>
+      <tr>
+        <td>61</td>
+        <td class="kw">爆表</td>
+        <td><span class="badge badge-rise">📈 新興題材</span></td>
+        <td>3</td>
+        <td><div class="bar-w"><div class="bar" style="width:6%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">139.65x</td>
+        <td class="sent-pos">🟢 9.0</td>
+        <td><span class="src-dot">2</span></td>
+        <td class="hot">58.1</td>
+      </tr>
+      <tr>
+        <td>62</td>
+        <td class="kw">油電</td>
+        <td><span class="badge badge-rise">📈 新興題材</span></td>
+        <td>3</td>
+        <td><div class="bar-w"><div class="bar" style="width:6%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">67.53x</td>
+        <td class="sent-pos">🟢 7.2</td>
+        <td><span class="src-dot">2</span></td>
+        <td class="hot">58.1</td>
+      </tr>
+      <tr>
+        <td>63</td>
+        <td class="kw">觀光股</td>
+        <td><span class="badge badge-warn">⚠️ 情緒異常</span></td>
+        <td>3</td>
+        <td><div class="bar-w"><div class="bar" style="width:6%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">197.05x</td>
+        <td class="sent-pos">🟢 7.5</td>
+        <td><span class="src-dot">1</span></td>
+        <td class="hot">57.1</td>
+      </tr>
+      <tr>
+        <td>64</td>
+        <td class="kw">寫次</td>
+        <td><span class="badge badge-warn">⚠️ 情緒異常</span></td>
+        <td>3</td>
+        <td><div class="bar-w"><div class="bar" style="width:6%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">1106.49x</td>
+        <td class="sent-pos">🟢 8.0</td>
+        <td><span class="src-dot">1</span></td>
+        <td class="hot">57.1</td>
+      </tr>
+      <tr>
+        <td>65</td>
+        <td class="kw">動休</td>
+        <td><span class="badge badge-up">↑ 升溫中</span></td>
+        <td>3</td>
+        <td><div class="bar-w"><div class="bar" style="width:6%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">139.65x</td>
+        <td class="sent-neu">🟡 5.8</td>
+        <td><span class="src-dot">1</span></td>
+        <td class="hot">57.1</td>
+      </tr>
+      <tr>
+        <td>66</td>
+        <td class="kw">國內</td>
+        <td><span class="badge badge-blast">🚀 爆發性成長</span></td>
+        <td>13</td>
+        <td><div class="bar-w"><div class="bar" style="width:27%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">24.64x</td>
+        <td class="sent-neu">🟡 6.4</td>
+        <td><span class="src-dot">3</span></td>
+        <td class="hot">56.5</td>
+      </tr>
+      <tr>
+        <td>67</td>
+        <td class="kw">股數</td>
+        <td><span class="badge badge-rise">📈 新興題材</span></td>
+        <td>7</td>
+        <td><div class="bar-w"><div class="bar" style="width:14%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">26.9x</td>
+        <td class="sent-neu">🟡 5.1</td>
+        <td><span class="src-dot">3</span></td>
+        <td class="hot">56.3</td>
+      </tr>
+      <tr>
+        <td>68</td>
+        <td class="kw">自結合</td>
+        <td><span class="badge badge-rise">📈 新興題材</span></td>
+        <td>4</td>
+        <td><div class="bar-w"><div class="bar" style="width:8%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">25.92x</td>
+        <td class="sent-pos">🟢 7.3</td>
+        <td><span class="src-dot">3</span></td>
+        <td class="hot">52.4</td>
+      </tr>
+      <tr>
+        <td>69</td>
+        <td class="kw">領取</td>
+        <td><span class="badge badge-rise">📈 新興題材</span></td>
+        <td>9</td>
+        <td><div class="bar-w"><div class="bar" style="width:18%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">24.09x</td>
+        <td class="sent-neu">🟡 6.0</td>
+        <td><span class="src-dot">2</span></td>
+        <td class="hot">51.6</td>
+      </tr>
+      <tr>
+        <td>70</td>
+        <td class="kw">資金貸</td>
+        <td><span class="badge badge-rise">📈 新興題材</span></td>
+        <td>5</td>
+        <td><div class="bar-w"><div class="bar" style="width:10%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">23.99x</td>
+        <td class="sent-neu">🟡 5.1</td>
+        <td><span class="src-dot">3</span></td>
+        <td class="hot">49.6</td>
+      </tr>
+      <tr>
+        <td>71</td>
+        <td class="kw">條之</td>
+        <td><span class="badge badge-rise">📈 新興題材</span></td>
+        <td>4</td>
+        <td><div class="bar-w"><div class="bar" style="width:8%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">24.89x</td>
+        <td class="sent-neu">🟡 5.6</td>
+        <td><span class="src-dot">2</span></td>
+        <td class="hot">49.5</td>
+      </tr>
+      <tr>
+        <td>72</td>
+        <td class="kw">行使</td>
+        <td><span class="badge badge-rise">📈 新興題材</span></td>
+        <td>3</td>
+        <td><div class="bar-w"><div class="bar" style="width:6%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">24.67x</td>
+        <td class="sent-neu">🟡 5.4</td>
+        <td><span class="src-dot">3</span></td>
+        <td class="hot">49.4</td>
+      </tr>
+      <tr>
+        <td>73</td>
+        <td class="kw">塑膠</td>
+        <td><span class="badge badge-rise">📈 新興題材</span></td>
+        <td>4</td>
+        <td><div class="bar-w"><div class="bar" style="width:8%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">24.25x</td>
+        <td class="sent-neu">🟡 6.7</td>
+        <td><span class="src-dot">3</span></td>
+        <td class="hot">49.3</td>
+      </tr>
+      <tr>
+        <td>74</td>
+        <td class="kw">半導體</td>
+        <td><span class="badge badge-blast">🚀 爆發性成長</span></td>
+        <td>27</td>
+        <td><div class="bar-w"><div class="bar" style="width:55%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">15.21x</td>
+        <td class="sent-pos">🟢 7.0</td>
+        <td><span class="src-dot">3</span></td>
+        <td class="hot">49.2</td>
+      </tr>
+      <tr>
+        <td>75</td>
+        <td class="kw">增資</td>
+        <td><span class="badge badge-blast">🚀 爆發性成長</span></td>
+        <td>11</td>
+        <td><div class="bar-w"><div class="bar" style="width:22%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">21.2x</td>
+        <td class="sent-neu">🟡 6.1</td>
+        <td><span class="src-dot">3</span></td>
+        <td class="hot">48.7</td>
+      </tr>
+      <tr>
+        <td>76</td>
+        <td class="kw">員工</td>
+        <td><span class="badge badge-rise">📈 新興題材</span></td>
+        <td>4</td>
+        <td><div class="bar-w"><div class="bar" style="width:8%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">21.23x</td>
+        <td class="sent-neu">🟡 5.1</td>
+        <td><span class="src-dot">3</span></td>
+        <td class="hot">43.8</td>
+      </tr>
+      <tr>
+        <td>77</td>
+        <td class="kw">第一次</td>
+        <td><span class="badge badge-rise">📈 新興題材</span></td>
+        <td>5</td>
+        <td><div class="bar-w"><div class="bar" style="width:10%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">20.57x</td>
+        <td class="sent-neu">🟡 5.4</td>
+        <td><span class="src-dot">3</span></td>
+        <td class="hot">43.3</td>
+      </tr>
+      <tr>
+        <td>78</td>
+        <td class="kw">三個</td>
+        <td><span class="badge badge-rise">📈 新興題材</span></td>
+        <td>3</td>
+        <td><div class="bar-w"><div class="bar" style="width:6%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">21.06x</td>
+        <td class="sent-neu">🟡 6.0</td>
+        <td><span class="src-dot">3</span></td>
+        <td class="hot">42.8</td>
+      </tr>
+      <tr>
+        <td>79</td>
+        <td class="kw">出具</td>
+        <td><span class="badge badge-rise">📈 新興題材</span></td>
+        <td>3</td>
+        <td><div class="bar-w"><div class="bar" style="width:6%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">21.06x</td>
+        <td class="sent-neu">🟡 5.5</td>
+        <td><span class="src-dot">3</span></td>
+        <td class="hot">42.8</td>
+      </tr>
+      <tr>
+        <td>80</td>
+        <td class="kw">權息</td>
+        <td><span class="badge badge-rise">📈 新興題材</span></td>
+        <td>4</td>
+        <td><div class="bar-w"><div class="bar" style="width:8%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">20.31x</td>
+        <td class="sent-neu">🟡 5.7</td>
+        <td><span class="src-dot">3</span></td>
+        <td class="hot">42.1</td>
+      </tr>
+      <tr>
+        <td>81</td>
+        <td class="kw">發放</td>
+        <td><span class="badge badge-blast">🚀 爆發性成長</span></td>
+        <td>17</td>
+        <td><div class="bar-w"><div class="bar" style="width:35%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">14.92x</td>
+        <td class="sent-neu">🟡 5.6</td>
+        <td><span class="src-dot">3</span></td>
+        <td class="hot">41.5</td>
+      </tr>
+      <tr>
+        <td>82</td>
+        <td class="kw">上半年</td>
+        <td><span class="badge badge-rise">📈 新興題材</span></td>
+        <td>4</td>
+        <td><div class="bar-w"><div class="bar" style="width:8%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">19.46x</td>
+        <td class="sent-pos">🟢 7.7</td>
+        <td><span class="src-dot">3</span></td>
+        <td class="hot">40.5</td>
+      </tr>
+      <tr>
+        <td>83</td>
+        <td class="kw">項規定</td>
+        <td><span class="badge badge-rise">📈 新興題材</span></td>
+        <td>3</td>
+        <td><div class="bar-w"><div class="bar" style="width:6%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">19.62x</td>
+        <td class="sent-neu">🟡 5.4</td>
+        <td><span class="src-dot">2</span></td>
+        <td class="hot">39.1</td>
+      </tr>
+      <tr>
+        <td>84</td>
+        <td class="kw">會計</td>
+        <td><span class="badge badge-rise">📈 新興題材</span></td>
+        <td>3</td>
+        <td><div class="bar-w"><div class="bar" style="width:6%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">19.1x</td>
+        <td class="sent-neu">🟡 5.2</td>
+        <td><span class="src-dot">2</span></td>
+        <td class="hot">38.2</td>
+      </tr>
+      <tr>
+        <td>85</td>
+        <td class="kw">公司法人</td>
+        <td><span class="badge badge-rise">📈 新興題材</span></td>
+        <td>3</td>
+        <td><div class="bar-w"><div class="bar" style="width:6%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">18.37x</td>
+        <td class="sent-neu">🟡 4.5</td>
+        <td><span class="src-dot">3</span></td>
+        <td class="hot">37.8</td>
+      </tr>
+      <tr>
+        <td>86</td>
+        <td class="kw">背書</td>
+        <td><span class="badge badge-rise">📈 新興題材</span></td>
+        <td>4</td>
+        <td><div class="bar-w"><div class="bar" style="width:8%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">16.4x</td>
+        <td class="sent-neu">🟡 5.6</td>
+        <td><span class="src-dot">3</span></td>
+        <td class="hot">34.9</td>
+      </tr>
+      <tr>
+        <td>87</td>
+        <td class="kw">類股</td>
+        <td><span class="badge badge-rise">📈 新興題材</span></td>
+        <td>4</td>
+        <td><div class="bar-w"><div class="bar" style="width:8%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">15.71x</td>
+        <td class="sent-pos">🟢 7.4</td>
+        <td><span class="src-dot">3</span></td>
+        <td class="hot">33.7</td>
+      </tr>
+      <tr>
+        <td>88</td>
+        <td class="kw">情形</td>
+        <td><span class="badge badge-blast">🚀 爆發性成長</span></td>
+        <td>20</td>
+        <td><div class="bar-w"><div class="bar" style="width:41%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">9.38x</td>
+        <td class="sent-neu">🟡 5.0</td>
+        <td><span class="src-dot">3</span></td>
+        <td class="hot">33.5</td>
+      </tr>
+      <tr>
+        <td>89</td>
+        <td class="kw">除息</td>
+        <td><span class="badge badge-blast">🚀 爆發性成長</span></td>
+        <td>16</td>
+        <td><div class="bar-w"><div class="bar" style="width:33%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">9.62x</td>
+        <td class="sent-neu">🟡 5.8</td>
+        <td><span class="src-dot">3</span></td>
+        <td class="hot">31.1</td>
+      </tr>
+      <tr>
+        <td>90</td>
+        <td class="kw">保證</td>
+        <td><span class="badge badge-rise">📈 新興題材</span></td>
+        <td>4</td>
+        <td><div class="bar-w"><div class="bar" style="width:8%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">13.85x</td>
+        <td class="sent-neu">🟡 5.7</td>
+        <td><span class="src-dot">3</span></td>
+        <td class="hot">30.2</td>
+      </tr>
+      <tr>
+        <td>91</td>
+        <td class="kw">地區</td>
+        <td><span class="badge badge-rise">📈 新興題材</span></td>
+        <td>9</td>
+        <td><div class="bar-w"><div class="bar" style="width:18%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">11.41x</td>
+        <td class="sent-pos">🟢 7.0</td>
+        <td><span class="src-dot">3</span></td>
+        <td class="hot">29.3</td>
+      </tr>
+      <tr>
+        <td>92</td>
+        <td class="kw">轉換</td>
+        <td><span class="badge badge-rise">📈 新興題材</span></td>
+        <td>9</td>
+        <td><div class="bar-w"><div class="bar" style="width:18%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">11.22x</td>
+        <td class="sent-neu">🟡 6.1</td>
+        <td><span class="src-dot">3</span></td>
+        <td class="hot">29.0</td>
+      </tr>
+      <tr>
+        <td>93</td>
+        <td class="kw">權利</td>
+        <td><span class="badge badge-rise">📈 新興題材</span></td>
+        <td>5</td>
+        <td><div class="bar-w"><div class="bar" style="width:10%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">11.95x</td>
+        <td class="sent-neu">🟡 5.0</td>
+        <td><span class="src-dot">3</span></td>
+        <td class="hot">27.5</td>
+      </tr>
+      <tr>
+        <td>94</td>
+        <td class="kw">方式</td>
+        <td><span class="badge badge-rise">📈 新興題材</span></td>
+        <td>6</td>
+        <td><div class="bar-w"><div class="bar" style="width:12%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">11.02x</td>
+        <td class="sent-neu">🟡 6.2</td>
+        <td><span class="src-dot">3</span></td>
+        <td class="hot">26.5</td>
+      </tr>
+      <tr>
+        <td>95</td>
+        <td class="kw">月營</td>
+        <td><span class="badge badge-rise">📈 新興題材</span></td>
+        <td>3</td>
+        <td><div class="bar-w"><div class="bar" style="width:6%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">12.48x</td>
+        <td class="sent-pos">🟢 7.4</td>
+        <td><span class="src-dot">2</span></td>
+        <td class="hot">26.0</td>
+      </tr>
+      <tr>
+        <td>96</td>
+        <td class="kw">主管</td>
+        <td><span class="badge badge-rise">📈 新興題材</span></td>
+        <td>4</td>
+        <td><div class="bar-w"><div class="bar" style="width:8%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">11.14x</td>
+        <td class="sent-neu">🟡 6.0</td>
+        <td><span class="src-dot">3</span></td>
+        <td class="hot">25.3</td>
+      </tr>
+      <tr>
+        <td>97</td>
+        <td class="kw">申請</td>
+        <td><span class="badge badge-rise">📈 新興題材</span></td>
+        <td>3</td>
+        <td><div class="bar-w"><div class="bar" style="width:6%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">10.87x</td>
+        <td class="sent-neu">🟡 6.2</td>
+        <td><span class="src-dot">3</span></td>
+        <td class="hot">24.1</td>
+      </tr>
+      <tr>
+        <td>98</td>
+        <td class="kw">訂定</td>
+        <td><span class="badge badge-rise">📈 新興題材</span></td>
+        <td>4</td>
+        <td><div class="bar-w"><div class="bar" style="width:8%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">9.27x</td>
+        <td class="sent-neu">🟡 5.6</td>
+        <td><span class="src-dot">3</span></td>
+        <td class="hot">21.9</td>
+      </tr>
+      <tr>
+        <td>99</td>
+        <td class="kw">共同</td>
+        <td><span class="badge badge-rise">📈 新興題材</span></td>
+        <td>3</td>
+        <td><div class="bar-w"><div class="bar" style="width:6%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">10.04x</td>
+        <td class="sent-pos">🟢 7.7</td>
+        <td><span class="src-dot">2</span></td>
+        <td class="hot">21.5</td>
+      </tr>
+      <tr>
+        <td>100</td>
+        <td class="kw">同期</td>
+        <td><span class="badge badge-rise">📈 新興題材</span></td>
+        <td>4</td>
+        <td><div class="bar-w"><div class="bar" style="width:8%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">8.87x</td>
+        <td class="sent-pos">🟢 7.1</td>
+        <td><span class="src-dot">3</span></td>
+        <td class="hot">21.1</td>
+      </tr>
+      <tr>
+        <td>101</td>
+        <td class="kw">人區別</td>
+        <td><span class="badge badge-rise">📈 新興題材</span></td>
+        <td>3</td>
+        <td><div class="bar-w"><div class="bar" style="width:6%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">8.92x</td>
+        <td class="sent-neu">🟡 5.3</td>
+        <td><span class="src-dot">3</span></td>
+        <td class="hot">20.5</td>
+      </tr>
+      <tr>
+        <td>102</td>
+        <td class="kw">以利</td>
+        <td><span class="badge badge-rise">📈 新興題材</span></td>
+        <td>3</td>
+        <td><div class="bar-w"><div class="bar" style="width:6%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">8.35x</td>
+        <td class="sent-neu">🟡 5.4</td>
+        <td><span class="src-dot">3</span></td>
+        <td class="hot">19.5</td>
+      </tr>
+      <tr>
+        <td>103</td>
+        <td class="kw">自結</td>
+        <td><span class="badge badge-rise">📈 新興題材</span></td>
+        <td>3</td>
+        <td><div class="bar-w"><div class="bar" style="width:6%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">7.98x</td>
+        <td class="sent-neu">🟡 6.9</td>
+        <td><span class="src-dot">3</span></td>
+        <td class="hot">18.8</td>
+      </tr>
+      <tr>
+        <td>104</td>
+        <td class="kw">科技</td>
+        <td><span class="badge badge-rise">📈 新興題材</span></td>
+        <td>8</td>
+        <td><div class="bar-w"><div class="bar" style="width:16%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">5.83x</td>
+        <td class="sent-neu">🟡 6.9</td>
+        <td><span class="src-dot">3</span></td>
+        <td class="hot">18.4</td>
+      </tr>
+      <tr>
+        <td>105</td>
+        <td class="kw">異動</td>
+        <td><span class="badge badge-rise">📈 新興題材</span></td>
+        <td>9</td>
+        <td><div class="bar-w"><div class="bar" style="width:18%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">4.81x</td>
+        <td class="sent-neu">🟡 4.9</td>
+        <td><span class="src-dot">3</span></td>
+        <td class="hot">17.2</td>
+      </tr>
+      <tr>
+        <td>106</td>
+        <td class="kw">壓力</td>
+        <td><span class="badge badge-rise">📈 新興題材</span></td>
+        <td>3</td>
+        <td><div class="bar-w"><div class="bar" style="width:6%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">7.08x</td>
+        <td class="sent-pos">🟢 7.0</td>
+        <td><span class="src-dot">3</span></td>
+        <td class="hot">17.1</td>
+      </tr>
+      <tr>
+        <td>107</td>
+        <td class="kw">期間</td>
+        <td><span class="badge badge-rise">📈 新興題材</span></td>
+        <td>4</td>
+        <td><div class="bar-w"><div class="bar" style="width:8%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">6.28x</td>
+        <td class="sent-neu">🟡 5.8</td>
+        <td><span class="src-dot">3</span></td>
+        <td class="hot">16.4</td>
+      </tr>
+      <tr>
+        <td>108</td>
+        <td class="kw">上市</td>
+        <td><span class="badge badge-rise">📈 新興題材</span></td>
+        <td>7</td>
+        <td><div class="bar-w"><div class="bar" style="width:14%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">4.89x</td>
+        <td class="sent-neu">🟡 6.0</td>
+        <td><span class="src-dot">3</span></td>
+        <td class="hot">16.0</td>
+      </tr>
+      <tr>
+        <td>109</td>
+        <td class="kw">電子</td>
+        <td><span class="badge badge-rise">📈 新興題材</span></td>
+        <td>8</td>
+        <td><div class="bar-w"><div class="bar" style="width:16%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">3.07x</td>
+        <td class="sent-neu">🟡 6.6</td>
+        <td><span class="src-dot">3</span></td>
+        <td class="hot">13.3</td>
+      </tr>
+      <tr>
+        <td>110</td>
+        <td class="kw">準則</td>
+        <td><span class="badge badge-rise">📈 新興題材</span></td>
+        <td>3</td>
+        <td><div class="bar-w"><div class="bar" style="width:6%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">5.02x</td>
+        <td class="sent-neu">🟡 5.2</td>
+        <td><span class="src-dot">3</span></td>
+        <td class="hot">13.3</td>
+      </tr>
+      <tr>
+        <td>111</td>
+        <td class="kw">代表人</td>
+        <td><span class="badge badge-rise">📈 新興題材</span></td>
+        <td>3</td>
+        <td><div class="bar-w"><div class="bar" style="width:6%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">4.15x</td>
+        <td class="sent-neu">🟡 5.1</td>
+        <td><span class="src-dot">3</span></td>
+        <td class="hot">11.8</td>
+      </tr>
+      <tr>
+        <td>112</td>
+        <td class="kw">限制</td>
+        <td><span class="badge badge-rise">📈 新興題材</span></td>
+        <td>4</td>
+        <td><div class="bar-w"><div class="bar" style="width:8%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">3.33x</td>
+        <td class="sent-neu">🟡 5.5</td>
+        <td><span class="src-dot">3</span></td>
+        <td class="hot">11.0</td>
+      </tr>
+      <tr>
+        <td>113</td>
+        <td class="kw">處理</td>
+        <td><span class="badge badge-rise">📈 新興題材</span></td>
+        <td>3</td>
+        <td><div class="bar-w"><div class="bar" style="width:6%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">3.51x</td>
+        <td class="sent-neu">🟡 5.8</td>
+        <td><span class="src-dot">3</span></td>
+        <td class="hot">10.6</td>
+      </tr>
+      <tr>
+        <td>114</td>
+        <td class="kw">金融</td>
+        <td><span class="badge badge-rise">📈 新興題材</span></td>
+        <td>5</td>
+        <td><div class="bar-w"><div class="bar" style="width:10%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">2.66x</td>
+        <td class="sent-neu">🟡 4.9</td>
+        <td><span class="src-dot">3</span></td>
+        <td class="hot">10.4</td>
+      </tr>
+      <tr>
+        <td>115</td>
+        <td class="kw">價證券</td>
+        <td><span class="badge badge-rise">📈 新興題材</span></td>
+        <td>3</td>
+        <td><div class="bar-w"><div class="bar" style="width:6%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">2.91x</td>
+        <td class="sent-neu">🟡 6.6</td>
+        <td><span class="src-dot">3</span></td>
+        <td class="hot">9.5</td>
+      </tr>
+      <tr>
+        <td>116</td>
+        <td class="kw">發展</td>
+        <td><span class="badge badge-rise">📈 新興題材</span></td>
+        <td>3</td>
+        <td><div class="bar-w"><div class="bar" style="width:6%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">2.62x</td>
+        <td class="sent-pos">🟢 7.2</td>
+        <td><span class="src-dot">3</span></td>
+        <td class="hot">8.9</td>
+      </tr>
+      <tr>
+        <td>117</td>
+        <td class="kw">營運</td>
+        <td><span class="badge badge-rise">📈 新興題材</span></td>
+        <td>3</td>
+        <td><div class="bar-w"><div class="bar" style="width:6%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">2.31x</td>
+        <td class="sent-pos">🟢 7.3</td>
+        <td><span class="src-dot">3</span></td>
+        <td class="hot">8.4</td>
+      </tr>
+      <tr>
+        <td>118</td>
+        <td class="kw">持股</td>
+        <td><span class="badge badge-rise">📈 新興題材</span></td>
+        <td>3</td>
+        <td><div class="bar-w"><div class="bar" style="width:6%"></div></div></td>
+        <td style="color:#51cf66;font-weight:600">2.15x</td>
+        <td class="sent-neu">🟡 6.3</td>
+        <td><span class="src-dot">3</span></td>
+        <td class="hot">8.1</td>
+      </tr>
+      <tr>
+        <td>119</td>
+        <td class="kw">訊息</td>
+        <td><span class="badge badge-cold">─ 穩定</span></td>
+        <td>3</td>
+        <td><div class="bar-w"><div class="bar" style="width:6%"></div></div></td>
+        <td style="color:#ffa94d;font-weight:600">1.62x</td>
+        <td class="sent-neu">🟡 6.1</td>
+        <td><span class="src-dot">3</span></td>
+        <td class="hot">7.1</td>
+      </tr>
+      <tr>
+        <td>120</td>
+        <td class="kw">新高</td>
+        <td><span class="badge badge-warn">⚠️ 情緒異常</span></td>
+        <td>4</td>
+        <td><div class="bar-w"><div class="bar" style="width:8%"></div></div></td>
+        <td style="color:#718096;font-weight:600">1.01x</td>
+        <td class="sent-pos">🟢 7.2</td>
+        <td><span class="src-dot">3</span></td>
+        <td class="hot">6.7</td>
+      </tr>
+      <tr>
+        <td>121</td>
+        <td class="kw">動能</td>
+        <td><span class="badge badge-warn">⚠️ 情緒異常</span></td>
+        <td>3</td>
+        <td><div class="bar-w"><div class="bar" style="width:6%"></div></div></td>
+        <td style="color:#ffa94d;font-weight:600">1.21x</td>
+        <td class="sent-neu">🟡 6.8</td>
+        <td><span class="src-dot">3</span></td>
+        <td class="hot">6.4</td>
+      </tr>
+      <tr>
+        <td>122</td>
+        <td class="kw">集中</td>
+        <td><span class="badge badge-cold">─ 穩定</span></td>
+        <td>3</td>
+        <td><div class="bar-w"><div class="bar" style="width:6%"></div></div></td>
+        <td style="color:#718096;font-weight:600">0.8x</td>
+        <td class="sent-neu">🟡 6.1</td>
+        <td><span class="src-dot">3</span></td>
+        <td class="hot">5.6</td>
+      </tr></tbody>
+</table>
+
+<script>
+const gc={color:'#718096'},grid={color:'#2a2d3a'};
+const L=["生醫", "電零組", "光電", "電週邊", "通網", "新股", "電機", "執行", "發放現", "營建", "延至", "資服", "如因", "無擔", "保轉換", "觀光", "鋼鐵", "將順", "股權", "下一個", "數雲端", "工認", "憑證", "擔保", "發放日", "化工", "季轉換", "現金", "第二次", "第三次"];
+const recentD=[36, 33, 21, 23, 21, 18, 17, 15, 14, 15, 15, 14, 13, 11, 11, 10, 11, 11, 9, 10, 11, 8, 8, 8, 8, 9, 9, 49, 7, 7];
+const baseD=[3.1, 13.3, 4.8, 4.6, 4.6, 12.8, 8.3, 14.1, 5.8, 2.1, 0.5, 0.8, 0.1, 12.7, 10.6, 3.3, 5.0, 0.1, 10.5, 4.0, 1.0, 4.6, 6.3, 5.1, 6.4, 3.5, 1.0, 131.7, 7.9, 2.7];
+const trendD=[424.21, 91.69, 162.03, 183.66, 170.98, 52.38, 75.94, 39.86, 89.95, 263.6, 1058.59, 605.17, 4459.5, 32.77, 39.0, 114.24, 83.06, 3788.9, 32.61, 94.92, 400.45, 65.42, 48.05, 60.0, 47.42, 98.15, 329.58, 13.75, 33.74, 98.51];
+const sentD=[6.5, 6.9, 5.8, 6.6, 6.2, 5.4, 6.4, 6.8, 6.7, 7.3, 5.0, 7.1, 7.0, 5.5, 5.5, 6.5, 6.0, 5.0, 5.8, 7.8, 6.6, 5.5, 6.0, 5.7, 5.7, 6.7, 4.9, 6.4, 5.6, 5.0];
+
+// ── Bar chart: 近期 vs 基準
+new Chart(document.getElementById('cBar'),{
+  type:'bar',
+  data:{labels:L,datasets:[
+    {label:'近 7 天',data:recentD,backgroundColor:'rgba(108,99,255,0.75)',borderRadius:3},
+    {label:'基準（等比 7 天）',data:baseD,backgroundColor:'rgba(134,142,150,0.45)',borderRadius:3},
+  ]},
+  options:{responsive:true,maintainAspectRatio:false,
+    plugins:{legend:{labels:{color:'#e2e8f0'}}},
+    scales:{
+      x:{ticks:{...gc,maxRotation:55,font:{size:10}},grid,stacked:false},
+      y:{ticks:gc,grid,title:{display:true,text:'出現次數',color:'#718096'}}
+    }
+  }
+});
+
+// ── Trend ratio
+new Chart(document.getElementById('cTrend'),{
+  type:'bar',
+  data:{labels:L,datasets:[{
+    label:'趨勢倍率',data:trendD,borderRadius:3,
+    backgroundColor:trendD.map(v=>
+      v>=2?'rgba(255,107,107,0.75)':v>=1.2?'rgba(34,184,207,0.7)':'rgba(116,192,252,0.45)')
+  }]},
+  options:{responsive:true,maintainAspectRatio:false,
+    plugins:{legend:{display:false},
+      annotation:{annotations:{line1:{type:'line',yMin:1,yMax:1,borderColor:'rgba(255,255,255,.25)',borderWidth:1}}}
+    },
+    scales:{
+      x:{ticks:{...gc,maxRotation:55,font:{size:10}},grid},
+      y:{ticks:gc,grid,title:{display:true,text:'倍率（近期/基準）',color:'#718096'},min:0}
+    }
+  }
+});
+
+// ── Word cloud
+const wcC=document.getElementById('wc');
+wcC.width=wcC.parentElement.offsetWidth-40;
+wcC.height=350;
+const wcD=[["生醫", 36], ["電零組", 33], ["光電", 21], ["電週邊", 23], ["通網", 21], ["新股", 18], ["電機", 17], ["執行", 15], ["發放現", 14], ["營建", 15], ["延至", 15], ["資服", 14], ["如因", 13], ["無擔", 11], ["保轉換", 11], ["觀光", 10], ["鋼鐵", 11], ["將順", 11], ["股權", 9], ["下一個", 10], ["數雲端", 11], ["工認", 8], ["憑證", 8], ["擔保", 8], ["發放日", 8], ["化工", 9], ["季轉換", 9], ["現金", 49], ["第二次", 7], ["第三次", 7], ["食品", 7], ["生活", 7], ["紀念品", 8], ["息率", 6], ["月份", 9], ["紡纖", 8], ["水泥", 5], ["回庫", 5], ["生醫股", 7], ["航運", 4], ["汽車", 10], ["盈餘轉", 3], ["電纜", 3], ["昆山", 3], ["依公開", 3], ["到期", 3], ["第四次", 3], ["Corp", 3], ["91APP", 3], ["截止日", 3], ["還本", 3], ["代本", 3], ["因受", 4], ["日至", 6], ["綠能環", 5], ["認股", 4], ["尚凡", 3], ["之承諾", 3], ["其後續", 3], ["慘跌", 3], ["爆表", 3], ["油電", 3], ["觀光股", 3], ["寫次", 3], ["動休", 3], ["國內", 13], ["股數", 7], ["自結合", 4], ["領取", 9], ["資金貸", 5], ["條之", 4], ["行使", 3], ["塑膠", 4], ["半導體", 27], ["增資", 11], ["員工", 4], ["第一次", 5], ["三個", 3], ["出具", 3], ["權息", 4], ["發放", 17], ["上半年", 4], ["項規定", 3], ["會計", 3], ["公司法人", 3], ["背書", 4], ["類股", 4], ["情形", 20], ["除息", 16], ["保證", 4], ["地區", 9], ["轉換", 9], ["權利", 5], ["方式", 6], ["月營", 3], ["主管", 4], ["申請", 3], ["訂定", 4], ["共同", 3], ["同期", 4], ["人區別", 3], ["以利", 3], ["自結", 3], ["科技", 8], ["異動", 9], ["壓力", 3], ["期間", 4], ["上市", 7], ["電子", 8], ["準則", 3], ["代表人", 3], ["限制", 4], ["處理", 3], ["金融", 5], ["價證券", 3], ["發展", 3], ["營運", 3], ["持股", 3], ["訊息", 3], ["新高", 4], ["動能", 3], ["集中", 3]];
+const mx=Math.max(...wcD.map(d=>d[1]));
+const pal=['#ff6b6b','#ffa94d','#ffd43b','#51cf66','#22b8cf','#6c63ff','#cc5de8','#74c0fc'];
+WordCloud(wcC,{
+  list:wcD.map(d=>[d[0],d[1]/mx*55+14]),
+  fontFamily:"'Microsoft JhengHei',sans-serif",
+  color:()=>pal[Math.floor(Math.random()*pal.length)],
+  backgroundColor:'transparent',
+  rotateRatio:0.2,gridSize:8,shuffle:true
+});
+</script>
+</body>
+</html>

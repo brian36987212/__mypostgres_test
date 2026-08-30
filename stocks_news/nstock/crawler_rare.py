@@ -16,7 +16,7 @@ from bs4 import BeautifulSoup
 CRAWLER_TIER = "冷門股"
 STOCK_FILE = "../../stocks_category/股票代號_稀少_v2.csv"
 PROGRESS_FILE = "progress_nstock_rare.txt"
-DAYS_FILTER = 30  # 只抓 30 天內新聞
+DAYS_FILTER = 10  # 只抓 10 天內新聞（每週執行，視窗涵蓋一週間隔＋緩衝）
 MAX_CONCURRENCY = 3
 STOCK_DELAY_RANGE = (2.5, 5.0)
 

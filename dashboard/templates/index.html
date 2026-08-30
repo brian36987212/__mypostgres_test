@@ -197,6 +197,125 @@
                 grid-template-columns: 1fr;
             }
         }
+
+        .indicator-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 20px;
+            margin-top: 15px;
+        }
+
+        .indicator-card {
+            background: #f8f9fa;
+            border-radius: 12px;
+            padding: 20px;
+            text-align: center;
+        }
+
+        .indicator-icon {
+            font-size: 1.6em;
+            margin-bottom: 6px;
+        }
+
+        .indicator-label {
+            color: #666;
+            font-size: 0.9em;
+            margin-bottom: 10px;
+        }
+
+        .indicator-score {
+            font-size: 2.4em;
+            font-weight: bold;
+            color: #333;
+        }
+
+        .indicator-score .max {
+            font-size: 0.4em;
+            color: #999;
+            font-weight: normal;
+        }
+
+        .meter-track {
+            background: #e9ecef;
+            border-radius: 6px;
+            height: 10px;
+            overflow: hidden;
+            margin: 10px 0 8px;
+        }
+
+        .meter-fill {
+            height: 100%;
+            border-radius: 6px;
+            width: 0%;
+            transition: width 0.4s ease;
+        }
+
+        .indicator-status {
+            font-size: 0.9em;
+            font-weight: bold;
+            color: #999;
+        }
+
+        .status-good { color: #10b981; }
+        .status-neutral { color: #f59e0b; }
+        .status-bad { color: #ef4444; }
+
+        .fill-good { background: linear-gradient(90deg, #34d399, #10b981); }
+        .fill-neutral { background: linear-gradient(90deg, #fbbf24, #f59e0b); }
+        .fill-bad { background: linear-gradient(90deg, #f87171, #ef4444); }
+
+        .topic-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            gap: 16px;
+            margin-top: 15px;
+        }
+
+        .topic-card {
+            background: #f8f9fa;
+            border-radius: 12px;
+            padding: 18px;
+            border-left: 4px solid #667eea;
+        }
+
+        .topic-rank {
+            display: inline-block;
+            background: #667eea;
+            color: white;
+            width: 22px;
+            height: 22px;
+            border-radius: 50%;
+            text-align: center;
+            line-height: 22px;
+            font-size: 0.8em;
+            font-weight: bold;
+            margin-right: 8px;
+        }
+
+        .topic-keyword {
+            font-size: 1.15em;
+            font-weight: bold;
+            color: #333;
+        }
+
+        .topic-category {
+            display: inline-block;
+            margin-top: 8px;
+            padding: 3px 10px;
+            border-radius: 20px;
+            font-size: 0.78em;
+            background: #e0e7ff;
+            color: #4338ca;
+        }
+
+        .topic-meta {
+            margin-top: 10px;
+            font-size: 0.85em;
+            color: #666;
+            display: flex;
+            justify-content: space-between;
+            gap: 8px;
+        }
     </style>
 </head>
 
@@ -223,6 +342,40 @@
             <div class="stat-card">
                 <div class="stat-label">平均情緒</div>
                 <div class="stat-value" id="avgSentiment">-</div>
+            </div>
+        </div>
+
+        <div class="news-section" style="margin-bottom: 30px;">
+            <h3 class="chart-title">📊 三大分數指標</h3>
+            <div class="indicator-grid">
+                <div class="indicator-card" id="indicator-market_sentiment">
+                    <div class="indicator-icon">💭</div>
+                    <div class="indicator-label">市場情緒分數</div>
+                    <div class="indicator-score">- <span class="max">/ 10</span></div>
+                    <div class="meter-track"><div class="meter-fill"></div></div>
+                    <div class="indicator-status">載入中...</div>
+                </div>
+                <div class="indicator-card" id="indicator-topic_heat">
+                    <div class="indicator-icon">🔥</div>
+                    <div class="indicator-label">題材熱度分數</div>
+                    <div class="indicator-score">- <span class="max">/ 10</span></div>
+                    <div class="meter-track"><div class="meter-fill"></div></div>
+                    <div class="indicator-status">載入中...</div>
+                </div>
+                <div class="indicator-card" id="indicator-news_momentum">
+                    <div class="indicator-icon">⚡</div>
+                    <div class="indicator-label">新聞動能分數</div>
+                    <div class="indicator-score">- <span class="max">/ 10</span></div>
+                    <div class="meter-track"><div class="meter-fill"></div></div>
+                    <div class="indicator-status">載入中...</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="news-section" style="margin-bottom: 30px;">
+            <h3 class="chart-title">🔥 熱門議題 Top 3</h3>
+            <div class="topic-grid" id="topicGrid">
+                <div class="loading">載入中...</div>
             </div>
         </div>
 
@@ -535,10 +688,84 @@
             }
         }
 
+        async function fetchIndicators() {
+            const keys = ['market_sentiment', 'topic_heat', 'news_momentum'];
+            try {
+                const response = await fetch('/api/indicators');
+                const data = await response.json();
+
+                keys.forEach(key => {
+                    const card = document.getElementById(`indicator-${key}`);
+                    const info = data ? data[key] : null;
+                    const scoreEl = card.querySelector('.indicator-score');
+                    const fillEl = card.querySelector('.meter-fill');
+                    const statusEl = card.querySelector('.indicator-status');
+
+                    if (!info || info.score === null || info.score === undefined) {
+                        scoreEl.innerHTML = '- <span class="max">/ 10</span>';
+                        fillEl.style.width = '0%';
+                        fillEl.className = 'meter-fill';
+                        statusEl.textContent = '尚無資料';
+                        statusEl.className = 'indicator-status';
+                        return;
+                    }
+
+                    const score = info.score;
+                    let band = 'neutral';
+                    if (score >= 7) band = 'good';
+                    else if (score < 4) band = 'bad';
+
+                    scoreEl.innerHTML = `${score.toFixed(1)} <span class="max">/ 10</span>`;
+                    fillEl.style.width = `${Math.min(score / 10 * 100, 100)}%`;
+                    fillEl.className = `meter-fill fill-${band}`;
+                    statusEl.textContent = info.label || '';
+                    statusEl.className = `indicator-status status-${band}`;
+                });
+            } catch (e) {
+                console.error("fetchIndicators error", e);
+            }
+        }
+
+        async function fetchHotTopics() {
+            try {
+                const response = await fetch('/api/hot_topics');
+                const data = await response.json();
+
+                const grid = document.getElementById('topicGrid');
+
+                if (!data || data.length === 0) {
+                    grid.innerHTML = '<div class="loading">尚無資料</div>';
+                    return;
+                }
+
+                grid.innerHTML = data.map(topic => {
+                    let sentimentColor = '#f59e0b';
+                    if (topic.avg_sentiment >= 7) sentimentColor = '#10b981';
+                    else if (topic.avg_sentiment <= 3) sentimentColor = '#ef4444';
+
+                    return `
+                        <div class="topic-card">
+                            <div><span class="topic-rank">${topic.rank}</span><span class="topic-keyword">${topic.keyword}</span></div>
+                            <div class="topic-category">${topic.category || ''}</div>
+                            <div class="topic-meta">
+                                <span>近期 ${topic.recent_count} 則</span>
+                                <span>趨勢 ${topic.trend_ratio != null ? (topic.trend_ratio >= 30 ? '30x+' : topic.trend_ratio.toFixed(1) + 'x') : '-'}</span>
+                                <span style="color:${sentimentColor}; font-weight:bold;">情緒 ${topic.avg_sentiment != null ? topic.avg_sentiment.toFixed(1) : '-'}</span>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            } catch (e) {
+                console.error("fetchHotTopics error", e);
+            }
+        }
+
         async function refreshAll() {
             updateTime();
             await Promise.all([
                 fetchStats(),
+                fetchIndicators(),
+                fetchHotTopics(),
                 fetchSentimentDistribution(),
                 fetchTopStocks(),
                 fetchDailyTrend(),

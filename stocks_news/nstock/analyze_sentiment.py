@@ -17,7 +17,7 @@ PG_DSN = "postgresql://postgres:lab529@localhost:5432/postgres"
 NVIDIA_API_KEY = os.getenv("NVIDIA_API_KEY")
 MAX_CONCURRENCY = 2  # API 並發數 (1 避免 429)
 BATCH_SIZE = None
-DAYS_LIMIT = 3  # 只分析 3 天內的新聞
+DAYS_LIMIT = int(os.getenv("SENTIMENT_DAYS_LIMIT", "3"))  # 只分析 N 天內新聞；weekly 批次會設較大值補上 lower/rare
 
 UPDATE_SQL = """
 UPDATE public.nstock_stock_news

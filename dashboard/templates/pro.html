@@ -1,0 +1,944 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>股市情緒分析系統</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <style>
+        :root {
+            --bg: #f1f5f9;
+            --card: #ffffff;
+            --border: #e2e8f0;
+            --text: #1e293b;
+            --muted: #64748b;
+            --accent: #2563eb;
+            --accent-soft: #eff6ff;
+            --up: #e03131;
+            --down: #2f9e44;
+            --shadow: 0 1px 3px rgba(0, 0, 0, .08), 0 1px 2px rgba(0, 0, 0, .04);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, "Segoe UI", "Microsoft JhengHei", Roboto, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            font-size: 16px;
+            line-height: 1.5;
+        }
+
+        /* ---------- Top bar ---------- */
+        .topbar {
+            height: 62px;
+            background: linear-gradient(90deg, #1e293b, #334155);
+            color: #fff;
+            display: flex;
+            align-items: center;
+            padding: 0 26px;
+            position: sticky;
+            top: 0;
+            z-index: 20;
+        }
+        .topbar .brand { font-size: 21px; font-weight: 700; display: flex; align-items: center; gap: 9px; }
+        .topbar .spacer { flex: 1; }
+        .topbar .meta { font-size: 13.5px; opacity: .85; margin-right: 22px; }
+        .topbar .icon { margin-left: 18px; opacity: .9; font-size: 15px; cursor: pointer; }
+
+        /* ---------- Layout ---------- */
+        .shell { display: flex; align-items: flex-start; }
+        .sidebar {
+            width: 224px;
+            flex-shrink: 0;
+            background: var(--card);
+            border-right: 1px solid var(--border);
+            min-height: calc(100vh - 62px);
+            padding: 18px 13px;
+            position: sticky;
+            top: 62px;
+        }
+        .nav-item {
+            display: flex; align-items: center; gap: 11px;
+            padding: 12px 15px; border-radius: 10px;
+            color: var(--muted); cursor: pointer;
+            font-weight: 500; margin-bottom: 4px; font-size: 15.5px;
+            user-select: none;
+        }
+        .nav-item:hover { background: #f8fafc; color: var(--text); }
+        .nav-item.active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+        .nav-item .ic { width: 20px; text-align: center; font-size: 17px; }
+
+        .main { flex: 1; padding: 22px; min-width: 0; }
+        .grid {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 18px;
+            align-items: start;
+        }
+        .col-left { display: grid; gap: 18px; min-width: 0; }
+        .col-right { display: grid; gap: 18px; }
+        .row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+        .row-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; }
+
+        .card {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            padding: 20px 22px;
+            box-shadow: var(--shadow);
+        }
+        .card h3 { font-size: 17px; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
+        .card h3 .hint { margin-left: auto; font-size: 13px; color: var(--accent); font-weight: 500; cursor: help; }
+        .view-title { font-size: 22px; font-weight: 700; margin-bottom: 18px; }
+        .view-sub { color: var(--muted); font-size: 14px; font-weight: 400; margin-left: 10px; }
+
+        /* ---------- Fields ---------- */
+        .field { margin-bottom: 14px; }
+        .field label { display: block; font-size: 13.5px; color: var(--muted); margin-bottom: 6px; }
+        .input, .date-input, select.input {
+            width: 100%; padding: 10px 13px; border: 1px solid var(--border);
+            border-radius: 8px; font-size: 15.5px; background: #fff; color: var(--text);
+        }
+        .input:focus, .date-input:focus { outline: none; border-color: var(--accent); }
+        .date-row { display: flex; align-items: center; gap: 8px; }
+        .date-row .date-input { flex: 1; }
+        .btn {
+            padding: 10px 22px; background: var(--accent); color: #fff; border: none;
+            border-radius: 8px; font-size: 15px; font-weight: 600; cursor: pointer;
+        }
+        .btn:hover { background: #1d4ed8; }
+        .btn.ghost { background: #fff; color: var(--accent); border: 1px solid var(--border); }
+        .btn.ghost:hover { background: var(--accent-soft); }
+        .btn.sm { padding: 6px 14px; font-size: 13.5px; }
+        .query-actions { display: flex; justify-content: flex-end; gap: 8px; }
+
+        /* ---------- Stock info card ---------- */
+        .stock-head { display: flex; align-items: baseline; gap: 11px; margin-bottom: 20px; }
+        .stock-head .name { font-size: 27px; font-weight: 700; }
+        .stock-head .en { color: var(--muted); font-size: 15px; }
+        .stock-info { display: grid; grid-template-columns: 1.2fr 1fr 1fr; gap: 14px; align-items: end; }
+        .info-block .k { font-size: 13.5px; color: var(--muted); margin-bottom: 7px; }
+        .price { font-size: 34px; font-weight: 700; line-height: 1; }
+        .price.na { color: var(--muted); font-size: 22px; font-weight: 600; }
+        .price-change { font-size: 14.5px; margin-top: 5px; font-weight: 600; }
+        .info-block .v { font-size: 18px; font-weight: 600; }
+        .na-text { color: var(--muted); font-weight: 500; }
+
+        /* ---------- Stat cards ---------- */
+        .stat-card { text-align: left; }
+        .stat-label { color: var(--muted); font-size: 14px; margin-bottom: 9px; }
+        .stat-value { font-size: 32px; font-weight: 700; color: var(--accent); }
+        .stat-value.green { color: var(--down); }
+
+        /* ---------- Indicators ---------- */
+        .indicator { padding: 14px 0; border-bottom: 1px solid var(--border); }
+        .indicator:last-child { border-bottom: none; }
+        .ind-top { display: flex; justify-content: space-between; align-items: center; }
+        .ind-name { font-size: 16.5px; font-weight: 600; }
+        .ind-desc { font-size: 13px; color: var(--muted); margin-top: 3px; }
+        .gauge { position: relative; width: 82px; height: 82px; flex-shrink: 0; }
+        .gauge svg { transform: rotate(-90deg); }
+        .gauge .val {
+            position: absolute; inset: 0; display: flex; flex-direction: column;
+            align-items: center; justify-content: center; text-align: center;
+        }
+        .gauge .num { font-size: 23px; font-weight: 700; line-height: 1; }
+        .gauge .lab { font-size: 11px; color: var(--muted); margin-top: 3px; }
+        .scale { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); margin-top: 7px; }
+        .ind-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+
+        /* ---------- K-line chart ---------- */
+        .chart-head { display: flex; align-items: center; margin-bottom: 14px; }
+        .tabs { margin-left: auto; display: flex; gap: 6px; }
+        .tab {
+            padding: 6px 16px; border: 1px solid var(--border); background: #fff;
+            border-radius: 7px; font-size: 14px; cursor: pointer; color: var(--muted);
+        }
+        .tab.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+        .legend { display: flex; gap: 18px; font-size: 13px; color: var(--muted); margin-bottom: 10px; flex-wrap: wrap; }
+        .legend span { display: inline-flex; align-items: center; gap: 5px; }
+        .swatch { width: 15px; height: 3px; border-radius: 2px; display: inline-block; }
+        .chart-wrap { position: relative; height: 340px; }
+        .chart-wrap.sm { height: 260px; }
+
+        /* ---------- Tables ---------- */
+        table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+        th { text-align: left; color: var(--muted); font-weight: 500; padding: 9px 11px; border-bottom: 1px solid var(--border); font-size: 13px; }
+        td { padding: 11px 11px; border-bottom: 1px solid #f1f5f9; }
+        tbody tr:last-child td { border-bottom: none; }
+        .rank-medal { font-size: 17px; }
+        .trend-up { color: var(--up); font-weight: 600; }
+        .trend-down { color: var(--down); font-weight: 600; }
+        .trend-flat { color: var(--muted); }
+        .up { color: var(--up); }
+        .down { color: var(--down); }
+        .senti-pill {
+            display: inline-block; min-width: 26px; text-align: center;
+            padding: 3px 9px; border-radius: 20px; font-weight: 600; font-size: 13px;
+        }
+        .news-title { max-width: 340px; }
+        .news-title a { color: var(--text); text-decoration: none; }
+        .news-title a:hover { color: var(--accent); text-decoration: underline; }
+        .table-more { text-align: center; margin-top: 14px; }
+        .table-more a { color: var(--accent); font-size: 14px; text-decoration: none; cursor: pointer; }
+        .cat-tag { background: #f1f5f9; color: var(--muted); padding: 3px 10px; border-radius: 6px; font-size: 12.5px; white-space: nowrap; }
+
+        /* ---------- Hot topic cards ---------- */
+        .topic-card { display: flex; align-items: center; gap: 13px; padding: 14px 0; border-bottom: 1px solid var(--border); }
+        .topic-card:last-child { border-bottom: none; }
+        .topic-rank {
+            width: 28px; height: 28px; border-radius: 50%; color: #fff; font-weight: 700;
+            display: flex; align-items: center; justify-content: center; font-size: 14px; flex-shrink: 0;
+        }
+        .r1 { background: #f59e0b; } .r2 { background: #94a3b8; } .r3 { background: #d97706; }
+        .rN { background: #cbd5e1; }
+        .topic-body { flex: 1; min-width: 0; }
+        .topic-kw { font-weight: 600; font-size: 15.5px; }
+        .topic-sub { font-size: 13px; color: var(--muted); margin-top: 3px; }
+        .heat-badge { font-size: 12px; padding: 4px 10px; border-radius: 6px; font-weight: 600; flex-shrink: 0; }
+        .heat-high { background: #dcfce7; color: #16a34a; }
+        .heat-mid { background: #fef3c7; color: #d97706; }
+
+        .empty { color: var(--muted); text-align: center; padding: 34px 10px; font-size: 14.5px; }
+        .tip {
+            background: var(--accent-soft); border: 1px solid #dbeafe; border-radius: 12px;
+            padding: 15px 17px; font-size: 13px; color: var(--muted); line-height: 1.65;
+        }
+        .tip b { color: var(--text); }
+
+        /* ---------- Help / settings ---------- */
+        .help-block { margin-bottom: 22px; }
+        .help-block h4 { font-size: 16px; margin-bottom: 8px; color: var(--text); }
+        .help-block p, .help-block li { font-size: 14.5px; color: #475569; line-height: 1.75; }
+        .help-block ul { padding-left: 22px; }
+        .kbd { background: #f1f5f9; border: 1px solid var(--border); border-radius: 5px; padding: 2px 8px; font-size: 13px; font-family: monospace; }
+        .status-row { display: flex; justify-content: space-between; padding: 11px 0; border-bottom: 1px solid var(--border); font-size: 14.5px; }
+        .status-row:last-child { border-bottom: none; }
+        .badge-ok { color: #16a34a; font-weight: 600; }
+        .badge-off { color: var(--muted); font-weight: 600; }
+        .filters { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 18px; }
+        .filters .field { margin-bottom: 0; }
+        .filters .field.grow { flex: 1; min-width: 220px; }
+
+        .hidden { display: none !important; }
+        @media (max-width: 1100px) {
+            .grid { grid-template-columns: 1fr; }
+            .row-4 { grid-template-columns: repeat(2, 1fr); }
+            .sidebar { display: none; }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="topbar">
+        <div class="brand">📈 股市情緒分析系統</div>
+        <div class="spacer"></div>
+        <div class="meta">資料更新：<span id="update-time">--</span></div>
+        <div class="icon" title="通知">🔔</div>
+        <div class="icon" title="使用者">👤 使用者</div>
+    </div>
+
+    <div class="shell">
+        <aside class="sidebar">
+            <div class="nav-item active" data-view="stock"><span class="ic">🔍</span> 個股查詢</div>
+            <div class="nav-item" data-view="overview"><span class="ic">📊</span> 情緒總覽</div>
+            <div class="nav-item" data-view="topics"><span class="ic">🎯</span> 熱門題材</div>
+            <div class="nav-item" data-view="search"><span class="ic">📰</span> 新聞搜尋</div>
+            <div class="nav-item" data-view="watchlist"><span class="ic">💙</span> 自選股</div>
+            <div class="nav-item" data-view="settings"><span class="ic">⚙️</span> 系統設定</div>
+            <div class="nav-item" data-view="help"><span class="ic">❓</span> 使用說明</div>
+        </aside>
+
+        <main class="main">
+            <!-- ==================== 個股查詢 ==================== -->
+            <section id="view-stock" class="view">
+                <div class="grid">
+                    <div class="col-left">
+                        <div class="row-2">
+                            <div class="card">
+                                <h3>🔎 個股與時間區間查詢</h3>
+                                <div class="field">
+                                    <label>股票代號 / 名稱</label>
+                                    <input id="q" class="input" placeholder="例如 2330 或 台積電" value="2330"
+                                        onkeydown="if(event.key==='Enter')runQuery()">
+                                </div>
+                                <div class="field">
+                                    <label>查詢區間</label>
+                                    <div class="date-row">
+                                        <input id="start" type="date" class="date-input">
+                                        <span>~</span>
+                                        <input id="end" type="date" class="date-input">
+                                    </div>
+                                </div>
+                                <div class="query-actions">
+                                    <button class="btn ghost sm" onclick="addCurrentToWatchlist()">＋ 加入自選</button>
+                                    <button class="btn" onclick="runQuery()">查詢</button>
+                                </div>
+                            </div>
+
+                            <div class="card">
+                                <div class="stock-head">
+                                    <span class="name" id="s-name">--</span>
+                                    <span class="en" id="s-id"></span>
+                                </div>
+                                <div class="stock-info">
+                                    <div class="info-block">
+                                        <div class="k">最新股價</div>
+                                        <div class="price na" id="s-price">N/A</div>
+                                        <div class="price-change" id="s-change"></div>
+                                    </div>
+                                    <div class="info-block">
+                                        <div class="k">產業類別</div>
+                                        <div class="v na-text" id="s-industry">N/A</div>
+                                    </div>
+                                    <div class="info-block">
+                                        <div class="k">資料筆數</div>
+                                        <div class="v" id="s-count">-- 筆新聞</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="card">
+                            <div class="chart-head">
+                                <h3 style="margin:0;">📈 新聞情緒分數 K 線圖</h3>
+                                <div class="tabs">
+                                    <div class="tab" data-days="3" onclick="setDays(3)">3日</div>
+                                    <div class="tab" data-days="5" onclick="setDays(5)">5日</div>
+                                    <div class="tab active" data-days="10" onclick="setDays(10)">10日</div>
+                                    <div class="tab" data-days="30" onclick="setDays(30)">30日</div>
+                                </div>
+                            </div>
+                            <div class="legend">
+                                <span><span class="swatch" style="background:#e03131;"></span> K棒：情緒分數</span>
+                                <span><span class="swatch" style="background:#f59e0b;"></span> MA3</span>
+                                <span><span class="swatch" style="background:#2563eb;"></span> MA5</span>
+                                <span><span class="swatch" style="background:#8b5cf6;"></span> MA10</span>
+                            </div>
+                            <div class="chart-wrap"><canvas id="kline"></canvas></div>
+                        </div>
+
+                        <div class="row-2">
+                            <div class="card">
+                                <h3>🔥 最近三大熱門議題 Top 3</h3>
+                                <table>
+                                    <thead><tr><th>排名</th><th>熱門議題</th><th>出現次數</th><th>平均情緒</th><th>趨勢</th></tr></thead>
+                                    <tbody id="hot-table"></tbody>
+                                </table>
+                            </div>
+                            <div class="card">
+                                <h3>📰 新聞明細</h3>
+                                <table>
+                                    <thead><tr><th>日期</th><th>標題</th><th>來源</th><th>情緒</th><th>題材</th></tr></thead>
+                                    <tbody id="news-table"></tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="col-right">
+                        <div class="card">
+                            <h3>🎯 三大分數指標 <span style="font-weight:400;color:var(--muted);font-size:13px;">(1-10分)</span>
+                                <span class="hint" title="市場情緒／題材熱度／新聞動能，由每日資料計算">ⓘ 說明</span>
+                            </h3>
+                            <div id="indicators"></div>
+                        </div>
+                        <div class="card">
+                            <h3>🔥 近期熱門議題 Top 3</h3>
+                            <div id="topic-cards"></div>
+                            <div class="table-more"><a onclick="goView('topics')">查看更多議題 ›</a></div>
+                        </div>
+                        <div class="tip">
+                            <b>小提醒：</b>本系統情緒分析僅供投資參考，請謹慎評估風險。股價與產業別來自證交所／櫃買中心公開資料（收盤價，非即時報價）。
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ==================== 情緒總覽 ==================== -->
+            <section id="view-overview" class="view hidden">
+                <div class="view-title">📊 情緒總覽 <span class="view-sub">全市場新聞情緒概況</span></div>
+                <div class="row-4" style="margin-bottom:18px;">
+                    <div class="card stat-card"><div class="stat-label">總新聞數</div><div class="stat-value" id="ov-total">--</div></div>
+                    <div class="card stat-card"><div class="stat-label">追蹤股票數</div><div class="stat-value" id="ov-stocks">--</div></div>
+                    <div class="card stat-card"><div class="stat-label">今日新增</div><div class="stat-value green" id="ov-today">--</div></div>
+                    <div class="card stat-card"><div class="stat-label">平均情緒</div><div class="stat-value" id="ov-avg">--</div></div>
+                </div>
+                <div class="card" style="margin-bottom:18px;">
+                    <h3>🎯 三大分數指標</h3>
+                    <div class="ind-row" id="ov-indicators"></div>
+                </div>
+                <div class="row-2" style="margin-bottom:18px;">
+                    <div class="card"><h3>😊 情緒分數分布</h3><div class="chart-wrap sm"><canvas id="ov-dist"></canvas></div></div>
+                    <div class="card"><h3>🔥 最活躍股票 Top 10</h3><div class="chart-wrap sm"><canvas id="ov-top"></canvas></div></div>
+                </div>
+                <div class="row-2">
+                    <div class="card"><h3>📅 近 30 天新聞量趨勢</h3><div class="chart-wrap sm"><canvas id="ov-trend"></canvas></div></div>
+                    <div class="card"><h3>📈 近 7 天平均情緒趨勢</h3><div class="chart-wrap sm"><canvas id="ov-wsenti"></canvas></div></div>
+                </div>
+            </section>
+
+            <!-- ==================== 熱門題材 ==================== -->
+            <section id="view-topics" class="view hidden">
+                <div class="view-title">🎯 熱門題材 <span class="view-sub" id="topics-date"></span></div>
+                <div class="grid">
+                    <div class="card">
+                        <h3>📋 題材熱度排行 Top 20</h3>
+                        <table>
+                            <thead><tr><th>排名</th><th>題材</th><th>分類</th><th>出現次數</th><th>趨勢倍數</th><th>平均情緒</th><th>來源數</th></tr></thead>
+                            <tbody id="topics-table"></tbody>
+                        </table>
+                    </div>
+                    <div class="card">
+                        <h3>🏆 焦點題材 Top 3</h3>
+                        <div id="topics-cards"></div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ==================== 新聞搜尋 ==================== -->
+            <section id="view-search" class="view hidden">
+                <div class="view-title">📰 新聞搜尋 <span class="view-sub">跨 Yahoo／鉅亨網／NStock 三來源</span></div>
+                <div class="card">
+                    <div class="filters">
+                        <div class="field grow">
+                            <label>關鍵字（標題 / 股票名稱 / 代號）</label>
+                            <input id="se-q" class="input" placeholder="例如 台積電、AI、2454"
+                                onkeydown="if(event.key==='Enter')runSearch()">
+                        </div>
+                        <div class="field">
+                            <label>來源</label>
+                            <select id="se-source" class="input">
+                                <option value="">全部</option>
+                                <option value="Yahoo">Yahoo</option>
+                                <option value="鉅亨網">鉅亨網</option>
+                                <option value="NStock">NStock</option>
+                            </select>
+                        </div>
+                        <div class="field">
+                            <label>情緒</label>
+                            <select id="se-senti" class="input">
+                                <option value="">全部</option>
+                                <option value="7-9">正面 (7-9)</option>
+                                <option value="4-6">中性 (4-6)</option>
+                                <option value="1-3">負面 (1-3)</option>
+                            </select>
+                        </div>
+                        <div class="field"><button class="btn" onclick="runSearch()">搜尋</button></div>
+                    </div>
+                    <table>
+                        <thead><tr><th>日期</th><th>股票</th><th>標題</th><th>來源</th><th>情緒</th></tr></thead>
+                        <tbody id="search-table"><tr><td colspan="5" class="empty">輸入關鍵字後按搜尋（最多顯示 50 筆）</td></tr></tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- ==================== 自選股 ==================== -->
+            <section id="view-watchlist" class="view hidden">
+                <div class="view-title">💙 自選股 <span class="view-sub">儲存於本機瀏覽器</span></div>
+                <div class="card">
+                    <div class="filters">
+                        <div class="field grow">
+                            <label>新增股票（代號或名稱）</label>
+                            <input id="wl-add" class="input" placeholder="例如 2330 或 台積電"
+                                onkeydown="if(event.key==='Enter')addWatch()">
+                        </div>
+                        <div class="field"><button class="btn" onclick="addWatch()">＋ 加入</button></div>
+                    </div>
+                    <table>
+                        <thead><tr><th>代號</th><th>名稱</th><th>股價</th><th>漲跌</th><th>新聞數</th><th>平均情緒</th><th>操作</th></tr></thead>
+                        <tbody id="watch-table"></tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- ==================== 系統設定 ==================== -->
+            <section id="view-settings" class="view hidden">
+                <div class="view-title">⚙️ 系統設定</div>
+                <div class="row-2">
+                    <div class="card">
+                        <h3>🛠️ 偏好設定</h3>
+                        <div class="field">
+                            <label>預設查詢股票</label>
+                            <input id="set-stock" class="input" value="2330">
+                        </div>
+                        <div class="field">
+                            <label>預設查詢天數（往回）</label>
+                            <input id="set-days" class="input" type="number" min="7" max="365" value="120">
+                        </div>
+                        <div class="field">
+                            <label>K 線預設區間</label>
+                            <select id="set-kdays" class="input">
+                                <option value="3">3 日</option>
+                                <option value="5">5 日</option>
+                                <option value="10" selected>10 日</option>
+                                <option value="30">30 日</option>
+                            </select>
+                        </div>
+                        <div class="query-actions"><button class="btn" onclick="saveSettings()">儲存設定</button></div>
+                        <div id="set-msg" style="margin-top:10px;font-size:13.5px;color:var(--down);"></div>
+                    </div>
+                    <div class="card">
+                        <h3>📡 資料來源狀態</h3>
+                        <div class="status-row"><span>資料庫連線</span><span id="st-db" class="badge-off">檢查中…</span></div>
+                        <div class="status-row"><span>新聞來源</span><span>Yahoo · 鉅亨網 · NStock</span></div>
+                        <div class="status-row"><span>股價 / 產業來源</span><span>TWSE · TPEX 官方 OpenAPI</span></div>
+                        <div class="status-row"><span>最新指標日期</span><span id="st-ind">--</span></div>
+                        <div class="status-row"><span>股價交易日</span><span id="st-price">--</span></div>
+                        <div class="tip" style="margin-top:16px;">
+                            股價為官方收盤資料（每交易日更新一次，非即時盤中報價），伺服器端每 30 分鐘更新一次快取。
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ==================== 使用說明 ==================== -->
+            <section id="view-help" class="view hidden">
+                <div class="view-title">❓ 使用說明</div>
+                <div class="grid">
+                    <div class="card">
+                        <div class="help-block">
+                            <h4>🔍 個股查詢</h4>
+                            <p>輸入股票代號（如 <span class="kbd">2330</span>）或名稱（如 <span class="kbd">台積電</span>）及時間區間，即可看到該股的最新股價、產業別、資料筆數、情緒 K 線圖、熱門題材與新聞明細。</p>
+                        </div>
+                        <div class="help-block">
+                            <h4>📈 新聞情緒分數 K 線圖</h4>
+                            <p>以「每日新聞情緒分數」繪製 K 棒：當日第一則為開盤、最後一則為收盤、最高／最低為當日情緒極值；並疊加 MA3／MA5／MA10 移動平均線。台股慣例<span class="up">紅漲</span><span class="down">綠跌</span>。</p>
+                        </div>
+                        <div class="help-block">
+                            <h4>🎯 三大分數指標（1-10 分）</h4>
+                            <ul>
+                                <li><b>市場情緒分數</b>：衡量近期新聞內容偏正面或負面。</li>
+                                <li><b>題材熱度分數</b>：衡量市場討論熱度與關注度。</li>
+                                <li><b>新聞動能分數</b>：衡量新聞量的變化與趨勢動能。</li>
+                            </ul>
+                        </div>
+                        <div class="help-block">
+                            <h4>📰 新聞搜尋 / 💙 自選股</h4>
+                            <p>新聞搜尋可跨三來源以關鍵字、來源、情緒區間過濾。自選股清單儲存在你的瀏覽器（localStorage），顯示即時股價與新聞情緒摘要。</p>
+                        </div>
+                    </div>
+                    <div class="card">
+                        <div class="help-block">
+                            <h4>📊 資料來源</h4>
+                            <ul>
+                                <li>新聞：Yahoo 股市、鉅亨網、NStock 每日爬取並做情緒分析（1-9 分）。</li>
+                                <li>股價 / 產業別：證交所（上市）與櫃買中心（上櫃）官方 OpenAPI 收盤資料。</li>
+                            </ul>
+                        </div>
+                        <div class="help-block">
+                            <h4>💬 LINE Bot 指令</h4>
+                            <ul>
+                                <li><span class="kbd">查詢 台積電</span> — 特定股票新聞</li>
+                                <li><span class="kbd">熱門</span> / <span class="kbd">最新</span> — 最活躍 / 最新新聞</li>
+                                <li><span class="kbd">正面</span> / <span class="kbd">負面</span> — 情緒新聞</li>
+                                <li><span class="kbd">一周</span> / <span class="kbd">台積電 一周</span> — 週分析</li>
+                            </ul>
+                        </div>
+                        <div class="tip">本系統資料係根據公開新聞內容進行情緒分析，僅供學術與投資研究參考，不構成任何投資建議，請謹慎評估風險。</div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script>
+        const IND_META = {
+            market_sentiment: { name: '市場情緒分數', desc: '衡量新聞內容偏正面或負面' },
+            topic_heat: { name: '題材熱度分數', desc: '衡量市場討論熱度與關注度' },
+            news_momentum: { name: '新聞動能分數', desc: '衡量新聞熱度變化與趨勢動能' },
+        };
+        const MEDALS = { 1: '🥇', 2: '🥈', 3: '🥉' };
+        const TREND = { up: ['trend-up', '↗'], down: ['trend-down', '↘'], flat: ['trend-flat', '→'] };
+        const charts = {};   // 圖表實例，重繪前銷毀
+
+        // ---------- settings (localStorage) ----------
+        const S = {
+            get stock() { return localStorage.getItem('pro_stock') || '2330'; },
+            get days() { return parseInt(localStorage.getItem('pro_days') || '120', 10); },
+            get kdays() { return parseInt(localStorage.getItem('pro_kdays') || '10', 10); },
+        };
+
+        function sentiColor(s) { if (s == null) return '#94a3b8'; if (s >= 7) return '#16a34a'; if (s <= 3) return '#dc2626'; return '#d97706'; }
+        function sentiBg(s) { if (s == null) return '#f1f5f9'; if (s >= 7) return '#dcfce7'; if (s <= 3) return '#fee2e2'; return '#fef3c7'; }
+        function fmt(d) { return d.toISOString().slice(0, 10); }
+        function esc(x) { return (x == null ? '' : String(x)).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c])); }
+
+        function initDates() {
+            const end = new Date();
+            const start = new Date(); start.setDate(start.getDate() - S.days);
+            document.getElementById('end').value = fmt(end);
+            document.getElementById('start').value = fmt(start);
+        }
+
+        // ---------- view router ----------
+        function goView(name) {
+            document.querySelectorAll('.view').forEach(v => v.classList.add('hidden'));
+            document.getElementById('view-' + name).classList.remove('hidden');
+            document.querySelectorAll('.nav-item').forEach(n => n.classList.toggle('active', n.dataset.view === name));
+            if (name === 'overview') loadOverview();
+            if (name === 'topics') loadTopics();
+            if (name === 'watchlist') loadWatchlist();
+            if (name === 'settings') loadSettings();
+            window.scrollTo(0, 0);
+        }
+        document.querySelectorAll('.nav-item').forEach(n => n.addEventListener('click', () => goView(n.dataset.view)));
+
+        // ================= 個股查詢 =================
+        let fullKline = null, viewDays = 10, curStock = null;
+
+        const candlePlugin = {
+            id: 'candles',
+            afterDatasetsDraw(chart) {
+                const ohlc = chart.$ohlc;
+                if (!ohlc || !ohlc.length) return;
+                const { ctx, scales: { x, y } } = chart;
+                const bw = Math.max(3, Math.min(18, (x.width / ohlc.length) * 0.55));
+                ohlc.forEach((d, i) => {
+                    const [o, h, l, c] = d;
+                    const cx = x.getPixelForValue(i);
+                    const up = c >= o, color = up ? '#e03131' : '#2f9e44';
+                    ctx.strokeStyle = color; ctx.fillStyle = color; ctx.lineWidth = 1.5;
+                    ctx.beginPath();
+                    ctx.moveTo(cx, y.getPixelForValue(h)); ctx.lineTo(cx, y.getPixelForValue(l)); ctx.stroke();
+                    const yo = y.getPixelForValue(o), yc = y.getPixelForValue(c);
+                    const top = Math.min(yo, yc), bh = Math.max(2, Math.abs(yc - yo));
+                    if (up) ctx.fillRect(cx - bw / 2, top, bw, bh); else ctx.strokeRect(cx - bw / 2, top, bw, bh);
+                });
+            }
+        };
+
+        function renderChart() {
+            if (!fullKline) return;
+            const n = fullKline.labels.length, from = Math.max(0, n - viewDays);
+            const labels = fullKline.labels.slice(from);
+            const ohlc = fullKline.ohlc.slice(from);
+            const mk = a => a.slice(from);
+            if (charts.kline) charts.kline.destroy();
+            charts.kline = new Chart(document.getElementById('kline'), {
+                type: 'line',
+                data: {
+                    labels,
+                    datasets: [
+                        { label: 'MA3', data: mk(fullKline.ma3), borderColor: '#f59e0b', borderWidth: 1.6, pointRadius: 0, tension: .3, spanGaps: true },
+                        { label: 'MA5', data: mk(fullKline.ma5), borderColor: '#2563eb', borderWidth: 1.6, pointRadius: 0, tension: .3, spanGaps: true },
+                        { label: 'MA10', data: mk(fullKline.ma10), borderColor: '#8b5cf6', borderWidth: 1.6, pointRadius: 0, tension: .3, spanGaps: true },
+                    ]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    interaction: { mode: 'index', intersect: false },
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                afterBody(items) {
+                                    const d = fullKline.ohlc[items[0].dataIndex + from];
+                                    return d ? `開:${d[0]}  高:${d[1]}  低:${d[2]}  收:${d[3]}` : '';
+                                }
+                            }
+                        }
+                    },
+                    scales: { y: { min: 1, max: 10, ticks: { stepSize: 1 }, grid: { color: '#f1f5f9' } }, x: { grid: { display: false } } }
+                },
+                plugins: [candlePlugin]
+            });
+            charts.kline.$ohlc = ohlc;
+            charts.kline.update();
+        }
+
+        function setDays(d) {
+            viewDays = d;
+            document.querySelectorAll('#view-stock .tab').forEach(t => t.classList.toggle('active', +t.dataset.days === d));
+            renderChart();
+        }
+
+        async function runQuery() {
+            const q = document.getElementById('q').value.trim();
+            const start = document.getElementById('start').value;
+            const end = document.getElementById('end').value;
+            const hotBody = document.getElementById('hot-table'), newsBody = document.getElementById('news-table');
+            if (!q) return;
+
+            const r = await fetch(`/api/pro/stock?q=${encodeURIComponent(q)}&start=${start}&end=${end}`);
+            const data = await r.json();
+
+            if (!data.found) {
+                curStock = null;
+                document.getElementById('s-name').textContent = '查無資料';
+                document.getElementById('s-id').textContent = '';
+                document.getElementById('s-count').textContent = '0 筆新聞';
+                document.getElementById('s-price').textContent = 'N/A';
+                document.getElementById('s-price').className = 'price na';
+                document.getElementById('s-change').textContent = '';
+                document.getElementById('s-industry').textContent = 'N/A';
+                hotBody.innerHTML = '<tr><td colspan="5" class="empty">此區間查無此股票新聞</td></tr>';
+                newsBody.innerHTML = '<tr><td colspan="5" class="empty">—</td></tr>';
+                fullKline = { labels: [], ohlc: [], ma3: [], ma5: [], ma10: [] };
+                renderChart();
+                return;
+            }
+
+            curStock = { id: data.stock_id, name: data.stock_name };
+            document.getElementById('s-name').textContent = `${data.stock_id} ${data.stock_name}`;
+            document.getElementById('s-count').textContent = `${data.news_count} 筆新聞`;
+
+            const priceEl = document.getElementById('s-price'), chgEl = document.getElementById('s-change');
+            if (data.price == null) {
+                priceEl.textContent = 'N/A'; priceEl.className = 'price na'; chgEl.textContent = '';
+            } else {
+                const up = (data.price_change || 0) >= 0;
+                priceEl.textContent = data.price.toFixed(2);
+                priceEl.className = 'price ' + (up ? 'up' : 'down');
+                if (data.price_change != null) {
+                    const sign = up ? '▲' : '▼';
+                    chgEl.textContent = `${sign} ${Math.abs(data.price_change).toFixed(2)} (${data.price_change_pct ?? '--'}%)`;
+                    chgEl.className = 'price-change ' + (up ? 'up' : 'down');
+                } else chgEl.textContent = '';
+            }
+            const indEl = document.getElementById('s-industry');
+            indEl.textContent = data.industry || 'N/A';
+            indEl.className = data.industry ? 'v' : 'v na-text';
+
+            fullKline = data.kline; renderChart();
+
+            hotBody.innerHTML = data.hot_topics.length ? data.hot_topics.slice(0, 3).map(t => {
+                const tr = TREND[t.trend];
+                return `<tr><td><span class="rank-medal">${MEDALS[t.rank] || t.rank}</span></td>
+                    <td>${esc(t.keyword)}</td><td>${t.count}</td><td>${t.avg_sentiment ?? '--'}</td>
+                    <td class="${tr[0]}">${tr[1]}</td></tr>`;
+            }).join('') : '<tr><td colspan="5" class="empty">此區間無題材關鍵字</td></tr>';
+
+            newsBody.innerHTML = data.news.length ? data.news.slice(0, 8).map(nw => {
+                const s = nw.sentiment_score;
+                const title = nw.url ? `<a href="${esc(nw.url)}" target="_blank" rel="noopener">${esc(nw.title)}</a>` : esc(nw.title);
+                return `<tr><td style="white-space:nowrap;">${nw.date || '--'}</td>
+                    <td class="news-title">${title}</td>
+                    <td style="white-space:nowrap;">${esc(nw.media || nw.source)}</td>
+                    <td><span class="senti-pill" style="background:${sentiBg(s)};color:${sentiColor(s)};">${s ?? '--'}</span></td>
+                    <td><span class="cat-tag">${esc(nw.category)}</span></td></tr>`;
+            }).join('') : '<tr><td colspan="5" class="empty">此區間無新聞</td></tr>';
+        }
+
+        // ---------- indicators (shared) ----------
+        function gaugeHtml(key, it) {
+            const meta = IND_META[key], score = it ? it.score : null;
+            const pct = score == null ? 0 : Math.max(0, Math.min(1, score / 10));
+            const C = 2 * Math.PI * 30, off = C * (1 - pct);
+            const col = score == null ? '#cbd5e1' : score >= 6.5 ? '#16a34a' : score >= 4 ? '#f59e0b' : '#dc2626';
+            return `<div class="indicator">
+                <div class="ind-top">
+                    <div>
+                        <div class="ind-name">${meta.name}</div>
+                        <div class="ind-desc">${meta.desc}</div>
+                        <div class="scale" style="width:130px;"><span>1</span><span>10</span></div>
+                    </div>
+                    <div class="gauge">
+                        <svg width="82" height="82">
+                            <circle cx="41" cy="41" r="30" fill="none" stroke="#eef2f7" stroke-width="8"/>
+                            <circle cx="41" cy="41" r="30" fill="none" stroke="${col}" stroke-width="8"
+                                stroke-linecap="round" stroke-dasharray="${C}" stroke-dashoffset="${off}"/>
+                        </svg>
+                        <div class="val"><div class="num">${score == null ? '--' : score.toFixed(1)}</div><div class="lab">${it ? (it.label || '') : ''}</div></div>
+                    </div>
+                </div>
+            </div>`;
+        }
+
+        let indicatorData = null;
+        async function loadIndicators() {
+            try {
+                const data = await (await fetch('/api/indicators')).json();
+                indicatorData = data;
+                const box = document.getElementById('indicators');
+                if (!data) { box.innerHTML = '<div class="empty">尚無指標資料</div>'; return; }
+                document.getElementById('update-time').textContent = data.computed_date + ' 收盤';
+                box.innerHTML = ['market_sentiment', 'topic_heat', 'news_momentum'].map(k => gaugeHtml(k, data[k])).join('');
+            } catch (e) { document.getElementById('indicators').innerHTML = '<div class="empty">指標載入失敗</div>'; }
+        }
+
+        async function loadRecentTopics() {
+            const box = document.getElementById('topic-cards');
+            try {
+                const data = await (await fetch('/api/hot_topics')).json();
+                if (!data || !data.length) { box.innerHTML = '<div class="empty">尚無熱門議題</div>'; return; }
+                box.innerHTML = data.map(t => topicCardHtml(t)).join('');
+            } catch (e) { box.innerHTML = '<div class="empty">載入失敗</div>'; }
+        }
+        function topicCardHtml(t) {
+            const heat = (t.trend_ratio != null && t.trend_ratio >= 1.3) ? ['heat-high', '熱度高'] : ['heat-mid', '熱度中'];
+            return `<div class="topic-card">
+                <div class="topic-rank r${t.rank <= 3 ? t.rank : 'N'}">${t.rank}</div>
+                <div class="topic-body"><div class="topic-kw">${esc(t.keyword)}</div>
+                    <div class="topic-sub">${t.recent_count} 則 · 平均情緒 ${t.avg_sentiment ?? '--'}</div></div>
+                <div class="heat-badge ${heat[0]}">${heat[1]}</div></div>`;
+        }
+
+        // ================= 情緒總覽 =================
+        let overviewLoaded = false;
+        async function loadOverview() {
+            const [stats, dist, top, trend, wsenti] = await Promise.all([
+                fetch('/api/stats').then(r => r.json()),
+                fetch('/api/sentiment_distribution').then(r => r.json()),
+                fetch('/api/top_stocks').then(r => r.json()),
+                fetch('/api/daily_trend').then(r => r.json()),
+                fetch('/api/weekly_sentiment_trend').then(r => r.json()),
+            ]);
+            document.getElementById('ov-total').textContent = (stats.total_news ?? 0).toLocaleString();
+            document.getElementById('ov-stocks').textContent = (stats.total_stocks ?? 0).toLocaleString();
+            document.getElementById('ov-today').textContent = (stats.today_news ?? 0).toLocaleString();
+            document.getElementById('ov-avg').textContent = stats.avg_sentiment ?? '--';
+
+            if (indicatorData)
+                document.getElementById('ov-indicators').innerHTML =
+                    ['market_sentiment', 'topic_heat', 'news_momentum'].map(k => gaugeHtml(k, indicatorData[k])).join('');
+
+            drawBar('ov-dist', dist.labels.map(String), dist.data, '#60a5fa', '則數', dist.labels.map(sentiColor));
+            drawBar('ov-top', top.labels, top.data, '#818cf8', '新聞數');
+            drawLine('ov-trend', trend.labels, trend.data, '#2563eb', '新聞量');
+            drawLine('ov-wsenti', wsenti.labels, wsenti.data, '#16a34a', '平均情緒', 1, 9);
+            overviewLoaded = true;
+        }
+        function drawBar(id, labels, data, color, label, colors) {
+            if (charts[id]) charts[id].destroy();
+            charts[id] = new Chart(document.getElementById(id), {
+                type: 'bar',
+                data: { labels, datasets: [{ label, data, backgroundColor: colors || color, borderRadius: 5 }] },
+                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, grid: { color: '#f1f5f9' } }, x: { grid: { display: false } } } }
+            });
+        }
+        function drawLine(id, labels, data, color, label, ymin, ymax) {
+            if (charts[id]) charts[id].destroy();
+            charts[id] = new Chart(document.getElementById(id), {
+                type: 'line',
+                data: { labels, datasets: [{ label, data, borderColor: color, backgroundColor: color + '22', fill: true, tension: .3, pointRadius: 2 }] },
+                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { min: ymin, max: ymax, grid: { color: '#f1f5f9' } }, x: { grid: { display: false } } } }
+            });
+        }
+
+        // ================= 熱門題材 =================
+        async function loadTopics() {
+            const data = await (await fetch('/api/pro/topics')).json();
+            document.getElementById('topics-date').textContent = data.computed_date ? `（${data.computed_date}）` : '';
+            const tb = document.getElementById('topics-table');
+            tb.innerHTML = data.topics.length ? data.topics.map(t => {
+                const ratio = t.trend_ratio != null ? t.trend_ratio.toFixed(2) + 'x' : '--';
+                const cls = t.trend_ratio != null && t.trend_ratio >= 1.3 ? 'trend-up' : t.trend_ratio != null && t.trend_ratio < 0.9 ? 'trend-down' : '';
+                return `<tr><td><span class="rank-medal">${MEDALS[t.rank] || t.rank}</span></td>
+                    <td>${esc(t.keyword)}</td><td><span class="cat-tag">${esc(t.category || '—')}</span></td>
+                    <td>${t.recent_count}</td><td class="${cls}">${ratio}</td>
+                    <td>${t.avg_sentiment ?? '--'}</td><td>${t.sources ?? '--'}</td></tr>`;
+            }).join('') : '<tr><td colspan="7" class="empty">尚無題材資料（請先執行 stage2/stage3）</td></tr>';
+            document.getElementById('topics-cards').innerHTML =
+                data.topics.slice(0, 3).map(t => topicCardHtml({ ...t, recent_count: t.recent_count })).join('') ||
+                '<div class="empty">—</div>';
+        }
+
+        // ================= 新聞搜尋 =================
+        async function runSearch() {
+            const q = document.getElementById('se-q').value.trim();
+            const source = document.getElementById('se-source').value;
+            const senti = document.getElementById('se-senti').value;
+            let url = `/api/pro/news_search?q=${encodeURIComponent(q)}&source=${encodeURIComponent(source)}`;
+            if (senti) { const [a, b] = senti.split('-'); url += `&min=${a}&max=${b}`; }
+            const tb = document.getElementById('search-table');
+            tb.innerHTML = '<tr><td colspan="5" class="empty">搜尋中…</td></tr>';
+            const data = await (await fetch(url)).json();
+            tb.innerHTML = data.length ? data.map(nw => {
+                const s = nw.sentiment_score;
+                const title = nw.url ? `<a href="${esc(nw.url)}" target="_blank" rel="noopener">${esc(nw.title)}</a>` : esc(nw.title);
+                return `<tr><td style="white-space:nowrap;">${nw.date || '--'}</td>
+                    <td style="white-space:nowrap;">${esc(nw.stock_name)}</td>
+                    <td class="news-title">${title}</td>
+                    <td style="white-space:nowrap;">${esc(nw.media || nw.source)}</td>
+                    <td><span class="senti-pill" style="background:${sentiBg(s)};color:${sentiColor(s)};">${s ?? '--'}</span></td></tr>`;
+            }).join('') : '<tr><td colspan="5" class="empty">查無符合條件的新聞</td></tr>';
+        }
+
+        // ================= 自選股 =================
+        function getWatch() { try { return JSON.parse(localStorage.getItem('pro_watch') || '[]'); } catch (e) { return []; } }
+        function setWatch(a) { localStorage.setItem('pro_watch', JSON.stringify(a)); }
+
+        async function addWatch() {
+            const q = document.getElementById('wl-add').value.trim();
+            if (!q) return;
+            const data = await (await fetch(`/api/pro/stock?q=${encodeURIComponent(q)}&start=2000-01-01&end=2999-01-01`)).json();
+            if (!data.found) { alert('查無此股票：' + q); return; }
+            const list = getWatch();
+            if (!list.includes(data.stock_id)) { list.push(data.stock_id); setWatch(list); }
+            document.getElementById('wl-add').value = '';
+            loadWatchlist();
+        }
+        async function addCurrentToWatchlist() {
+            if (!curStock) { alert('請先查詢一檔股票'); return; }
+            const list = getWatch();
+            if (!list.includes(curStock.id)) { list.push(curStock.id); setWatch(list); }
+            alert(`已將 ${curStock.id} ${curStock.name} 加入自選股`);
+        }
+        function removeWatch(id) { setWatch(getWatch().filter(x => x !== id)); loadWatchlist(); }
+        function viewStock(id) {
+            document.getElementById('q').value = id;
+            goView('stock'); runQuery();
+        }
+
+        async function loadWatchlist() {
+            const list = getWatch();
+            const tb = document.getElementById('watch-table');
+            if (!list.length) { tb.innerHTML = '<tr><td colspan="7" class="empty">尚未加入任何自選股，於上方新增或在個股查詢頁點「＋ 加入自選」</td></tr>'; return; }
+            tb.innerHTML = '<tr><td colspan="7" class="empty">載入中…</td></tr>';
+            const data = await (await fetch(`/api/pro/watchlist?ids=${list.join(',')}`)).json();
+            tb.innerHTML = data.map(x => {
+                let price = 'N/A', chg = '--', cls = '';
+                if (x.price != null) {
+                    price = x.price.toFixed(2);
+                    if (x.price_change != null) {
+                        const up = x.price_change >= 0; cls = up ? 'up' : 'down';
+                        chg = `${up ? '▲' : '▼'} ${Math.abs(x.price_change).toFixed(2)} (${x.price_change_pct ?? '--'}%)`;
+                    }
+                }
+                const s = x.avg_sentiment;
+                return `<tr><td>${esc(x.stock_id)}</td><td>${esc(x.stock_name)}</td>
+                    <td class="${cls}">${price}</td><td class="${cls}">${chg}</td>
+                    <td>${x.news_count}</td>
+                    <td><span class="senti-pill" style="background:${sentiBg(s)};color:${sentiColor(s)};">${s ?? '--'}</span></td>
+                    <td><button class="btn ghost sm" onclick="viewStock('${esc(x.stock_id)}')">查看</button>
+                        <button class="btn ghost sm" onclick="removeWatch('${esc(x.stock_id)}')">移除</button></td></tr>`;
+            }).join('');
+        }
+
+        // ================= 系統設定 =================
+        function loadSettings() {
+            document.getElementById('set-stock').value = S.stock;
+            document.getElementById('set-days').value = S.days;
+            document.getElementById('set-kdays').value = S.kdays;
+            fetch('/api/stats').then(r => r.json())
+                .then(d => { const el = document.getElementById('st-db'); el.textContent = '正常'; el.className = 'badge-ok'; })
+                .catch(() => { const el = document.getElementById('st-db'); el.textContent = '連線失敗'; el.className = 'badge-off'; });
+            document.getElementById('st-ind').textContent = indicatorData ? indicatorData.computed_date : '--';
+            fetch('/api/pro/stock?q=2330&start=2026-01-01&end=2999-01-01').then(r => r.json())
+                .then(d => { document.getElementById('st-price').textContent = d.price_date || '--'; });
+        }
+        function saveSettings() {
+            localStorage.setItem('pro_stock', document.getElementById('set-stock').value.trim() || '2330');
+            localStorage.setItem('pro_days', document.getElementById('set-days').value || '120');
+            localStorage.setItem('pro_kdays', document.getElementById('set-kdays').value || '10');
+            document.getElementById('set-msg').textContent = '✔ 已儲存，下次查詢即套用';
+            setTimeout(() => document.getElementById('set-msg').textContent = '', 2500);
+        }
+
+        // ================= init =================
+        (function init() {
+            document.getElementById('q').value = S.stock;
+            viewDays = S.kdays;
+            document.querySelectorAll('#view-stock .tab').forEach(t => t.classList.toggle('active', +t.dataset.days === viewDays));
+            initDates();
+            loadIndicators();
+            loadRecentTopics();
+            runQuery();
+        })();
+    </script>
+</body>
+
+</html>

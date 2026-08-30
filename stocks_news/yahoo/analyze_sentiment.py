@@ -19,7 +19,7 @@ MAX_CONCURRENCY = 2  # API 並發數 (1 避免 429)
 BATCH_SIZE = None  # 設為 None 表示一次處理全部，或設為數字如 100 表示分批執行
 
 # 可選：只分析最近 N 天的新聞
-DAYS_LIMIT = 3  # 只分析 3 天內的新聞
+DAYS_LIMIT = int(os.getenv("SENTIMENT_DAYS_LIMIT", "3"))  # 只分析 N 天內新聞；weekly 批次會設較大值補上 lower/rare
 
 UPDATE_SQL = """
 UPDATE public.yahoo_stock_news

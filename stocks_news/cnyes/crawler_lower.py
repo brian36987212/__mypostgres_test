@@ -19,7 +19,7 @@ from openai import AsyncOpenAI
 CRAWLER_TIER = "偏下股"  # 識別標記
 STOCK_FILE = "../../stocks_category/股票代號_偏下_v2.csv"
 PROGRESS_FILE = "progress_cnyes_lower.txt"
-DAYS_FILTER = 30  # 過濾天數：只抓 30 天內新聞
+DAYS_FILTER = 10  # 過濾天數：只抓 10 天內新聞（每週執行，視窗涵蓋一週間隔＋緩衝）
 MAX_CONCURRENCY = 5  # 並發數
 
 # 延遲範圍 (秒)
@@ -308,7 +308,8 @@ async def process_stock(sem: asyncio.Semaphore, session: AsyncSession, db_pool: 
                 news_id = news.get("newsId")
                 title = news.get("title", "")
                 category_name = news.get("categoryName")
-                category_id = news.get("categoryId")
+                raw_cid = news.get("categoryId")
+                category_id = int(raw_cid) if raw_cid not in (None, "") else None
                 publish_at_ts = news.get("publishAt")
                 
                 if not news_id or not title:

@@ -308,7 +308,8 @@ async def process_stock(sem: asyncio.Semaphore, session: AsyncSession, db_pool: 
                 news_id = news.get("newsId")
                 title = news.get("title", "")
                 category_name = news.get("categoryName")
-                category_id = news.get("categoryId")
+                raw_cid = news.get("categoryId")
+                category_id = int(raw_cid) if raw_cid not in (None, "") else None
                 publish_at_ts = news.get("publishAt")
                 
                 if not news_id or not title:
