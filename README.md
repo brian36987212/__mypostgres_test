@@ -228,7 +228,12 @@ cd dashboard
 python app.py
 ```
 
-訪問 http://localhost:5000
+訪問以下頁面:
+
+| 網址 | 頁面 |
+|------|------|
+| http://localhost:5000/ | 股市新聞即時 Dashboard（總覽、情緒分布、熱門股、最新新聞） |
+| http://localhost:5000/pro | 股市情緒分析系統 Pro（個股查詢、題材分析、新聞搜尋、自選股） |
 
 ---
 
@@ -239,6 +244,23 @@ python app.py
 | Dashboard + LINE Bot | **Railway** | 從 GitHub 自動部署 |
 | 資料庫（近期資料） | **Supabase** | 免費 500MB，存最近 30 天 |
 | 完整歷史資料 | **本機 PostgreSQL** | 供題材分析使用 |
+
+### Dashboard 網址
+
+Dashboard 有兩個頁面，共用同一個 Railway 網域:
+
+| 路徑 | 頁面 | 樣板 |
+|------|------|------|
+| `/` | 股市新聞即時 Dashboard | `dashboard/templates/index.html` |
+| `/pro` | 股市情緒分析系統 Pro | `dashboard/templates/pro.html` |
+
+```
+https://<your-app>.up.railway.app/       # 即時 Dashboard
+https://<your-app>.up.railway.app/pro    # Pro 分析頁
+```
+
+> 實際網域可在 Railway 專案的 **Settings → Networking → Public Networking** 查看；
+> 也等於 LINE Bot Webhook URL 去掉結尾的 `/webhook`。
 
 ### Railway 環境變數設定
 
